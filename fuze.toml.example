@@ -1,0 +1,20 @@
+# Fuze AI Configuration
+# Copy this file to fuze.toml in your project root.
+
+[defaults]
+maxRetries = 3
+timeout = 30000           # ms
+maxCostPerStep = 1.00     # USD
+maxCostPerRun = 10.00     # USD
+maxIterations = 25
+onLoop = "kill"           # "kill" | "warn" | "skip"
+traceOutput = "./fuze-traces.jsonl"
+
+[loopDetection]
+windowSize = 5
+repeatThreshold = 3
+maxFlatSteps = 4
+
+# Override or add model pricing (USD per token, not per 1K)
+[providers]
+# "openai/gpt-4o" = { input = 0.0000025, output = 0.00001 }

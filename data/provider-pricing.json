@@ -1,0 +1,42 @@
+{
+  "openai/gpt-4o": {
+    "input": 0.0000025,
+    "output": 0.00001
+  },
+  "openai/gpt-4o-mini": {
+    "input": 0.00000015,
+    "output": 0.0000006
+  },
+  "openai/o3-mini": {
+    "input": 0.0000011,
+    "output": 0.0000044
+  },
+  "anthropic/claude-sonnet-4": {
+    "input": 0.000003,
+    "output": 0.000015
+  },
+  "anthropic/claude-haiku-3.5": {
+    "input": 0.0000008,
+    "output": 0.000004
+  },
+  "anthropic/claude-opus-4": {
+    "input": 0.000015,
+    "output": 0.000075
+  },
+  "google/gemini-2.0-flash": {
+    "input": 0.0000001,
+    "output": 0.0000004
+  },
+  "google/gemini-2.5-pro": {
+    "input": 0.00000125,
+    "output": 0.00001
+  },
+  "deepseek/deepseek-chat": {
+    "input": 0.00000014,
+    "output": 0.00000028
+  },
+  "meta/llama-3.3-70b": {
+    "input": 0.0000008,
+    "output": 0.0000008
+  }
+}

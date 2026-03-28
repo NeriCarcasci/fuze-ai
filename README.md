@@ -1,7 +1,7 @@
 
 <p align="center">
   <strong>Runtime safety layer for AI agents.</strong><br/>
-  Loop detection · Budget enforcement · Side-effect tracking · EU AI Act compliance
+  Loop detection, budget enforcement, side-effect tracking, and EU AI Act compliance
 </p>
 
 <p align="center">
@@ -22,13 +22,13 @@
   <img src="https://img.shields.io/github/stars/fuze-ai/fuze?color=ff5544" alt="stars"/>
 </p>
 
----
 
 Your agent framework runs the agent. **Fuze makes sure it doesn't bankrupt you while it runs.**
 
-A [$1.6M weekend bill](https://geekfence.com/the-1-6-million-weekend-why-simple-api-gateways-fail-in-the-agentic-era/) from one retry loop. A [$47K invoice](https://rocketedge.com/2026/03/15/your-ai-agent-bill-is-30x-higher-than-it-needs-to-be-the-6-tier-fix/) from two agents ping-ponging for 11 days. [$400M in unbudgeted cloud spend](https://analyticsweek.com/finops-for-agentic-ai-cloud-cost-2026/) across the Fortune 500. These aren't edge cases — they're the norm when agents run without guardrails.
 
-Fuze is a **middleware** that wraps your existing agent tools — in LangGraph, CrewAI, Google ADK, raw OpenAI/Anthropic SDK, or any MCP server — with runtime protection. One decorator. No framework migration.
+A [$1.6M weekend bill](https://geekfence.com/the-1-6-million-weekend-why-simple-api-gateways-fail-in-the-agentic-era/) from one retry loop. A [$47K invoice](https://rocketedge.com/2026/03/15/your-ai-agent-bill-is-30x-higher-than-it-needs-to-be-the-6-tier-fix/) from two agents ping-ponging for 11 days. [$400M in unbudgeted cloud spend](https://analyticsweek.com/finops-for-agentic-ai-cloud-cost-2026/) across the Fortune 500. These aren't edge cases; they're the norm when agents run without guardrails.
+
+Fuze is a **middleware** that wraps your existing agent tools (in LangGraph, CrewAI, Google ADK, raw OpenAI/Anthropic SDK, or any MCP server) with runtime protection. One decorator. No framework migration.
 
 ## Quickstart
 
@@ -70,12 +70,12 @@ pip install fuze-ai
 ```python
 from fuze_ai import guard
 
-# Bare minimum — sensible defaults protect you
+# Bare minimum: sensible defaults protect you
 @guard
 def search(query: str):
     return vector_db.search(query)
 
-# Side-effect: Fuze tracks this and can roll it back
+# Side-effect: Fuze tracks this and can roll it back.
 @guard(side_effect=True, compensate=cancel_invoice)
 def send_invoice(customer_id: str, amount: float):
     return stripe.create_invoice(customer_id, amount)
@@ -88,21 +88,21 @@ def analyse(text: str):
 
 ## Why Fuze
 
-Every major agent framework — LangGraph, CrewAI, Google ADK, Microsoft Agent Framework — saves state but **leaves failure detection, automatic recovery, and duplicate prevention entirely to you** ([source](https://www.diagrid.io/blog/still-not-durable-how-microsoft-agent-framework-and-strands-agents-repeat-the-same-mistake)).
+Every major agent framework (LangGraph, CrewAI, Google ADK, Microsoft Agent Framework) saves state but **leaves failure detection, automatic recovery, and duplicate prevention entirely to you** ([source](https://www.diagrid.io/blog/still-not-durable-how-microsoft-agent-framework-and-strands-agents-repeat-the-same-mistake)).
 
 | Problem | What happens today | What Fuze does |
 |---|---|---|
 | **Runaway loops** | Agent retries forever. You find out Monday. | Detects repeated tool calls, semantic stalls, cost velocity spikes. Kills or recovers automatically. |
 | **Budget explosion** | No ceiling. Token spend compounds silently. | Hard $/token/time limits per step and per run. Pre-execution cost estimation. |
 | **Duplicate side-effects** | Checkpoint-restore causes double payments ([paper](https://arxiv.org/html/2603.20625v1)). | Tracks which calls changed the real world. Idempotency keys. Compensation on rollback. |
-| **No audit trail** | Logs say "Agent stopped due to max iterations." | Full decision trace: what the LLM saw, decided, called, and what happened — replayable. |
-| **EU AI Act** | 4 months until enforcement. €35M or 7% penalty. | Art. 12 logging, Art. 14 human oversight, Art. 73 incident reports — out of the box. |
+| **No audit trail** | Logs say "Agent stopped due to max iterations." | Full decision trace: what the LLM saw, decided, called, and what happened (replayable). |
+| **EU AI Act** | 4 months until enforcement. €35M or 7% penalty. | Art. 12 logging, Art. 14 human oversight, Art. 73 incident reports (out of the box). |
 
 ### Fuze vs `max_iterations`
 
-Setting `max_iterations=10` is a blunt instrument that handles **one of five** failure modes. It's a fuse that blows but doesn't tell you which appliance is faulty, doesn't switch to a backup, and doesn't file the insurance claim.
+Setting `max_iterations=10` is a blunt instrument that handles **one of five** failure modes. It's a fuse that blows, but doesn't tell you which appliance is faulty, doesn't switch to a backup, and doesn't file the insurance claim.
 
-Fuze is the circuit breaker + smoke detector + fire suppression + documentation, in one `@guard`.
+Fuze is the circuit breaker, smoke detector, fire suppression, and documentation, all in one `@guard`.
 
 ## How It Works
 
@@ -119,7 +119,7 @@ Fuze operates in three modes, each building on the last:
                   Local trace file ✓
 ```
 
-Just `npm install` / `pip install`. No daemon, no database. Guards run in-process with <0.3ms overhead.
+Just `npm install` or `pip install`. No daemon, no database. Guards run in-process with less than 0.3ms overhead.
 
 ### Mode 2: SDK + Daemon (centralised protection)
 
@@ -135,7 +135,7 @@ Just `npm install` / `pip install`. No daemon, no database. Guards run in-proces
 npx fuze-ai daemon
 ```
 
-The daemon aggregates telemetry from all SDK instances, detects cross-run patterns, enforces org-wide budgets, and can kill any run externally.
+The daemon aggregates telemetry from all SDK instances, detects cross-run patterns, enforces organization-wide budgets, and can kill any run externally.
 
 ### Mode 3: SDK + Daemon + Dashboard (full monitoring)
 
@@ -144,12 +144,12 @@ npx fuze-ai dashboard    # Web UI at localhost:4200
 npx fuze-ai tui          # Terminal UI (works over SSH)
 ```
 
-Live runs. Trace replay. Budget charts. Kill buttons. EU AI Act compliance panel.
+Live runs, trace replay, budget charts, kill buttons, and an EU AI Act compliance panel.
 
 ## Configuration
 
 ```toml
-# fuze.toml — project-level defaults
+# fuze.toml: project-level defaults
 
 [defaults]
 max_retries = 3
@@ -170,7 +170,7 @@ risk_level = "minimal"   # minimal | limited | high
 log_pii = false          # hash args by default for GDPR
 ```
 
-Per-function overrides always win:
+Per-function overrides always take precedence:
 
 ```typescript
 // This function gets a tighter ceiling than the project default
@@ -206,7 +206,7 @@ class EmailTool(FuzeMixin, BaseTool):
 
 ## MCP Proxy
 
-Zero-code-change protection for **any** MCP server:
+Zero-code-change protection for any MCP server:
 
 ```bash
 # Before: client connects directly to MCP server
@@ -216,21 +216,21 @@ npx @modelcontextprotocol/server-postgres
 npx fuze-ai proxy -- npx @modelcontextprotocol/server-postgres
 ```
 
-Every `tools/call` is intercepted. Budget checked. Loop detected. Side-effects tracked. Logged. The MCP server and client don't know Fuze exists.
+Every `tools/call` is intercepted: budget checked, loop detected, side-effects tracked, and logged. The MCP server and client don't know Fuze exists.
 
 ## EU AI Act
 
 EU AI Act enforcement begins **August 2, 2026**. Penalties up to **€35M or 7% of global annual revenue**.
 
-Fuze directly covers 8 Articles for high-risk AI systems:
+Fuze directly covers eight Articles for high-risk AI systems:
 
 | Article | Requirement | Fuze Feature |
 |---|---|---|
 | **Art. 12** | Automatic event recording | Full trace of every agent step |
 | **Art. 13** | Deployers can interpret output | Trace replay with decision context |
-| **Art. 14** | Human oversight + stop button | Kill switch, approval gates, dashboard |
+| **Art. 14** | Human oversight and stop button | Kill switch, approval gates, dashboard |
 | **Art. 15** | Robustness under errors | Loop detection, recovery strategies, side-effect compensation |
-| **Art. 19** | Log retention ≥6 months | Append-only audit store, configurable retention |
+| **Art. 19** | Log retention (≥6 months) | Append-only audit store, configurable retention |
 | **Art. 26** | Deployer monitoring obligations | Dashboard, alerts, agent health scores |
 | **Art. 72** | Post-market monitoring | Continuous runtime monitoring, trend analysis |
 | **Art. 73** | Incident reporting (72h/15d) | Structured incident report PDF export |
@@ -241,15 +241,15 @@ Detailed compliance matrix: [docs/compliance-matrix.md](./docs/compliance-matrix
 
 Fuze logs every guarded function call:
 
-- **Timestamps** — start/end per step, ISO 8601
-- **Agent identity** — agent_id, version, model provider, model name
-- **Tool calls** — name, args hash (raw args opt-in), result summary
-- **Cost** — tokens in/out, USD per provider pricing
-- **Guard decisions** — proceed, loop detected, budget checked, side-effect flagged
-- **Human oversight** — who intervened, what they decided
-- **Side-effect status** — was this a write? compensation status?
+- **Timestamps**: start/end per step, ISO 8601
+- **Agent identity**: agent_id, version, model provider, model name
+- **Tool calls**: name, args hash (raw args opt-in), result summary
+- **Cost**: tokens in/out, USD per provider pricing
+- **Guard decisions**: proceed, loop detected, budget checked, side-effect flagged
+- **Human oversight**: who intervened, what they decided
+- **Side-effect status**: was this a write? compensation status?
 
-All records are **append-only** with hash chain for tamper detection. Default: args are hashed, not stored raw (GDPR-safe). Full logging opt-in via `log_pii = true`.
+All records are **append-only** with a hash chain for tamper detection. By default, arguments are hashed and not stored raw (GDPR-safe). Full logging is opt-in via `log_pii = true`.
 
 ## Roadmap
 
@@ -286,5 +286,5 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 ---
 
 <p align="center">
-  Built in Ireland 🇮🇪 · EU AI Act native · Open source
+  Built in Ireland 🇮🇪, EU AI Act native, open source
 </p>

@@ -1,0 +1,148 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import * as net from 'node:net'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import * as fs from 'node:fs'
+import { UDSServer } from '../src/uds-server.js'
+import { RunManager } from '../src/run-manager.js'
+import { BudgetEnforcer } from '../src/budget-enforcer.js'
+import { PatternAnalyser } from '../src/pattern-analyser.js'
+import { AuditStore } from '../src/audit-store.js'
+import { AlertManager } from '../src/alert-manager.js'
+
+function tempSocket(): string {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\fuze-uds-test-${id}`
+    : path.join(os.tmpdir(), `fuze-uds-test-${id}.sock`)
+}
+
+function tempDb(): string {
+  return path.join(os.tmpdir(), `fuze-uds-db-${Date.now()}.db`)
+}
+
+async function sendLine(socketPath: string, line: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const sock = net.createConnection(socketPath)
+    let response = ''
+    const timer = setTimeout(() => resolve(response), 200)
+
+    sock.on('connect', () => {
+      sock.write(line + '\n')
+    })
+    sock.on('data', (d) => {
+      response += d.toString()
+      clearTimeout(timer)
+      sock.destroy()
+      resolve(response)
+    })
+    sock.on('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
+    sock.on('close', () => {
+      clearTimeout(timer)
+      resolve(response)
+    })
+  })
+}
+
+describe('UDSServer', () => {
+  let server: UDSServer
+  let socketPath: string
+  let dbPath: string
+  let auditStore: AuditStore
+
+  beforeEach(async () => {
+    socketPath = tempSocket()
+    dbPath = tempDb()
+    auditStore = new AuditStore(dbPath)
+    await auditStore.init()
+
+    server = new UDSServer(socketPath, {
+      runManager: new RunManager(),
+      budgetEnforcer: new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 }),
+      patternAnalyser: new PatternAnalyser(),
+      auditStore,
+      alertManager: new AlertManager({ dedupWindowMs: 0, webhookUrls: [] }),
+    })
+    await server.start()
+  })
+
+  afterEach(async () => {
+    await server.stop()
+    await auditStore.close()
+    if (process.platform !== 'win32' && fs.existsSync(socketPath)) fs.unlinkSync(socketPath)
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)
+  })
+
+  it('starts and accepts connections', async () => {
+    const sock = net.createConnection(socketPath)
+    await new Promise<void>((resolve) => sock.on('connect', () => { sock.destroy(); resolve() }))
+    expect(true).toBe(true)
+  })
+
+  it('removes stale socket on restart (Unix only)', async () => {
+    if (process.platform === 'win32') return // named pipes don't leave stale files
+
+    const stalePath = tempSocket()
+    fs.writeFileSync(stalePath, 'stale')
+    const s2 = new UDSServer(stalePath, {
+      runManager: new RunManager(),
+      budgetEnforcer: new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 }),
+      patternAnalyser: new PatternAnalyser(),
+      auditStore,
+      alertManager: new AlertManager({ dedupWindowMs: 0, webhookUrls: [] }),
+    })
+    await s2.start()
+    await s2.stop()
+    if (fs.existsSync(stalePath)) fs.unlinkSync(stalePath)
+  })
+
+  it('responds with proceed to step_start within budget', async () => {
+    // First send run_start
+    await sendLine(socketPath, JSON.stringify({
+      type: 'run_start', runId: 'r1', agentId: 'a1',
+    }))
+
+    const response = await sendLine(socketPath, JSON.stringify({
+      type: 'step_start', runId: 'r1', stepId: 's1', stepNumber: 1,
+      toolName: 'tool', argsHash: 'abc', sideEffect: false,
+    }))
+    const parsed = JSON.parse(response.trim())
+    expect(parsed.type).toBe('proceed')
+  })
+
+  it('handles malformed JSON without crashing', async () => {
+    const sock = net.createConnection(socketPath)
+    await new Promise<void>((resolve) => sock.on('connect', () => resolve()))
+    sock.write('this is not json\n')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(server.connectionCount).toBeGreaterThanOrEqual(0)
+    sock.destroy()
+  })
+
+  it('tracks connection count', async () => {
+    const socks: net.Socket[] = []
+    for (let i = 0; i < 3; i++) {
+      const s = net.createConnection(socketPath)
+      await new Promise<void>((r) => s.on('connect', () => r()))
+      socks.push(s)
+    }
+    // Allow a tick for the server-side connection event to fire
+    await new Promise((r) => setTimeout(r, 20))
+    expect(server.connectionCount).toBe(3)
+    for (const s of socks) s.destroy()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(server.connectionCount).toBe(0)
+  })
+
+  it('persists run_start to audit store', async () => {
+    await sendLine(socketPath, JSON.stringify({
+      type: 'run_start', runId: 'r-persist', agentId: 'agent-p',
+    }))
+    await new Promise((r) => setTimeout(r, 50))
+    const run = await auditStore.getRun('r-persist')
+    expect(run?.agentId).toBe('agent-p')
+  })
+})

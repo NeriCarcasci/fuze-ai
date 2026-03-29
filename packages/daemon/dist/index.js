@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+/**
+ * @fuze-ai/daemon — CLI entry point.
+ *
+ * Subcommands:
+ *   fuze-ai daemon  [--config <path>]                   Start the runtime daemon
+ *   fuze-ai proxy   [options] -- <server-cmd> [args...]  Start the MCP proxy
+ */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+const subcommand = process.argv[2];
+if (subcommand === 'proxy') {
+    const { runProxy } = await import('./proxy/index.js');
+    await runProxy(process.argv.slice(3));
+    process.exit(0);
+}
+// Default: daemon subcommand
+import { loadDaemonConfig } from './config.js';
+import { AuditStore } from './audit-store.js';
+import { BudgetEnforcer } from './budget-enforcer.js';
+import { PatternAnalyser } from './pattern-analyser.js';
+import { RunManager } from './run-manager.js';
+import { AlertManager } from './alert-manager.js';
+import { UDSServer } from './uds-server.js';
+import { APIServer } from './api-server.js';
+async function main() {
+    // Parse --config flag
+    const args = process.argv.slice(2);
+    const configIdx = args.indexOf('--config');
+    const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined;
+    const config = loadDaemonConfig(configPath);
+    // Ensure storage directory exists
+    const storageDir = path.dirname(config.storagePath);
+    if (!fs.existsSync(storageDir)) {
+        fs.mkdirSync(storageDir, { recursive: true });
+    }
+    // Build services
+    const auditStore = new AuditStore(config.storagePath);
+    await auditStore.init();
+    const budgetEnforcer = new BudgetEnforcer(config.budget);
+    const patternAnalyser = new PatternAnalyser();
+    const runManager = new RunManager();
+    const alertManager = new AlertManager(config.alerts);
+    const udsServer = new UDSServer(config.socketPath, {
+        runManager,
+        budgetEnforcer,
+        patternAnalyser,
+        auditStore,
+        alertManager,
+    });
+    const apiServer = new APIServer(config.apiPort, {
+        runManager,
+        budgetEnforcer,
+        patternAnalyser,
+        auditStore,
+        alertManager,
+        udsServer,
+    });
+    // Forward alerts to WebSocket clients
+    const origEmit = alertManager.emit.bind(alertManager);
+    alertManager.emit = (input) => {
+        origEmit(input);
+        apiServer.broadcast({ ...input, recordType: 'alert', timestamp: new Date().toISOString() });
+    };
+    // Start servers
+    await udsServer.start();
+    await apiServer.start();
+    process.stderr.write(`[fuze-daemon] Listening on UDS ${config.socketPath}, HTTP :${config.apiPort}\n`);
+    // Graceful shutdown
+    const shutdown = async (signal) => {
+        process.stderr.write(`\n[fuze-daemon] Received ${signal}, shutting down...\n`);
+        try {
+            await udsServer.stop();
+            await apiServer.stop();
+            await auditStore.close();
+        }
+        catch (err) {
+            process.stderr.write(`[fuze-daemon] Shutdown error: ${err.message}\n`);
+        }
+        process.exit(0);
+    };
+    process.on('SIGINT', () => void shutdown('SIGINT'));
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
+    // Periodic retention purge (once per hour)
+    setInterval(() => {
+        auditStore.purgeOlderThan(config.retentionDays).then((deleted) => {
+            if (deleted > 0) {
+                process.stderr.write(`[fuze-daemon] Purged ${deleted} old run(s)\n`);
+            }
+        }, (err) => {
+            process.stderr.write(`[fuze-daemon] Purge error: ${err.message}\n`);
+        });
+    }, 60 * 60 * 1000).unref();
+}
+main().catch((err) => {
+    process.stderr.write(`[fuze-daemon] Fatal: ${err.message}\n`);
+    process.exit(1);
+});
+//# sourceMappingURL=index.js.map

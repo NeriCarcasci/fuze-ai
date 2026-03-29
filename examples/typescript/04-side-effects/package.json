@@ -1,0 +1,14 @@
+{
+  "name": "fuze-example-side-effects",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "fuze-ai": "latest"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

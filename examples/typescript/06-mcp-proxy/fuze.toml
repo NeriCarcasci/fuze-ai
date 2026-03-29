@@ -1,0 +1,34 @@
+# Fuze AI — MCP Proxy Configuration
+#
+# Place this file in the working directory where you run
+#   npx fuze-ai proxy -- <server-command>
+#
+# The [proxy] section controls session-wide limits.
+# The [proxy.tools.<NAME>] sections set per-tool overrides.
+
+[proxy]
+maxCostPerRun  = 10.00                        # USD — hard budget ceiling for the session
+maxIterations  = 50                           # total tool calls before the proxy kills the run
+traceOutput    = "./traces/mcp-proxy.jsonl"   # where JSONL trace records are written
+onLoop         = "kill"                       # "kill" | "warn" | "skip"
+
+# ── Per-tool configuration ───────────────────────────────────────────────
+
+[proxy.tools.web_search]
+maxCost       = 0.50      # USD ceiling per call
+sideEffect    = false     # pure read — safe to auto-retry
+
+[proxy.tools.send_email]
+sideEffect    = true      # real-world consequence — no auto-retry
+maxCost       = 0.10
+
+[proxy.tools.create_invoice]
+sideEffect    = true
+maxCost       = 1.00
+
+[proxy.tools.delete_record]
+sideEffect    = true
+maxCost       = 0.05
+
+# Add more tools as needed. Any tool not listed here inherits the
+# session-wide defaults from [proxy].

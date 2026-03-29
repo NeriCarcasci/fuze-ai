@@ -6,13 +6,30 @@ import { BudgetTracker } from './budget-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
+import { createTransport } from './transports/index.js'
+import type { TelemetryTransport } from './transports/index.js'
 import { createGuardWrapper } from './guard.js'
 import type { GuardContext } from './guard.js'
 import { mergePricing } from './pricing.js'
 
+// Module-level transport singleton — one connection per process, lazily created.
+let _transport: TelemetryTransport | null = null
+
+function getOrCreateTransport(config: FuzeConfig): TelemetryTransport {
+  if (!_transport) {
+    _transport = createTransport(config)
+    void _transport.connect()
+  }
+  return _transport
+}
+
 // Re-export public types
 export type { GuardOptions, FuzeConfig, RunContext } from './types.js'
 export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js'
+export { extractUsageFromResult } from './pricing.js'
+export type { ExtractedUsage } from './pricing.js'
+export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js'
+export type { TelemetryTransport } from './transports/index.js'
 
 // Global configuration state
 let globalConfig: FuzeConfig = {}
@@ -57,6 +74,12 @@ export function configure(config: FuzeConfig): void {
   if (config.providers) {
     mergePricing(config.providers)
   }
+
+  // Reset transport so it picks up new config (cloud key, socket path, etc.)
+  if (_transport) {
+    _transport.disconnect()
+    _transport = null
+  }
 }
 
 /**
@@ -91,9 +114,11 @@ export function guard<T extends (...args: unknown[]) => unknown>(
 ): T {
   const config = ensureConfig()
   const resolved = ConfigLoader.merge(config, options)
+  const runId = randomUUID()
+  const transport = getOrCreateTransport(config)
 
   const context: GuardContext = {
-    runId: randomUUID(),
+    runId,
     budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
     loopDetector: new LoopDetector({
       ...resolved.loopDetection,
@@ -102,7 +127,10 @@ export function guard<T extends (...args: unknown[]) => unknown>(
     sideEffectRegistry: new SideEffectRegistry(),
     traceRecorder: new TraceRecorder(resolved.traceOutput),
     stepNumber: 0,
+    transport,
   }
+
+  void transport.sendRunStart(runId, fn.name || 'anonymous', {})
 
   const guardFn = createGuardWrapper(resolved, context)
   return guardFn(fn, options)
@@ -135,6 +163,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
   const config = ensureConfig()
   const resolved = ConfigLoader.merge(config, options)
   const runId = randomUUID()
+  const transport = getOrCreateTransport(config)
 
   const context: GuardContext = {
     runId,
@@ -146,9 +175,11 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
     sideEffectRegistry: new SideEffectRegistry(),
     traceRecorder: new TraceRecorder(resolved.traceOutput),
     stepNumber: 0,
+    transport,
   }
 
   context.traceRecorder.startRun(runId, agentId, resolved)
+  void transport.sendRunStart(runId, agentId, {})
 
   const guardFn = createGuardWrapper(resolved, context)
 
@@ -162,6 +193,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
       const { totalCost } = context.budgetTracker.getStatus()
       context.traceRecorder.endRun(runId, status, totalCost)
       await context.traceRecorder.flush()
+      await transport.sendRunEnd(runId, status, totalCost)
     },
   }
 }
@@ -172,4 +204,8 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
 export function resetConfig(): void {
   globalConfig = {}
   configLoaded = false
+  if (_transport) {
+    _transport.disconnect()
+    _transport = null
+  }
 }

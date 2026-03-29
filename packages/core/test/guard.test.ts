@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { guard, createRun, configure, resetConfig } from '../src/index.js'
 import { LoopDetected, BudgetExceeded, GuardTimeout } from '../src/errors.js'
-import { unlinkSync, existsSync } from 'node:fs'
+import { unlinkSync, existsSync, readFileSync } from 'node:fs'
 
 const TRACE_FILE = './fuze-traces.jsonl'
 
@@ -81,5 +81,150 @@ describe('guard()', () => {
     expect(result).toBe('done')
     expect(vi.getTimerCount()).toBe(0)
     vi.useRealTimers()
+  })
+})
+
+/** Read the first step record from the trace file (after flushing via run.end()). */
+async function readFirstStep(): Promise<Record<string, unknown>> {
+  const trace = readFileSync(TRACE_FILE, 'utf-8')
+  const lines = trace.trim().split('\n').map(l => JSON.parse(l) as Record<string, unknown>)
+  const step = lines.find(r => r.recordType === 'step')
+  if (!step) throw new Error('No step record found in trace')
+  return step
+}
+
+describe('auto cost extraction', () => {
+  it('extracts actual cost from OpenAI-shaped response (usage.prompt_tokens)', async () => {
+    const run = createRun('test')
+    const fn = run.guard(
+      async function callLLM() {
+        return {
+          model: 'openai/gpt-4o',
+          usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
+        }
+      },
+      { model: 'openai/gpt-4o' },
+    )
+
+    await fn()
+    await run.end()
+
+    const step = await readFirstStep()
+    expect(step.tokensIn).toBe(1000)
+    expect(step.tokensOut).toBe(500)
+    expect(step.costUsd).toBeGreaterThan(0)
+  })
+
+  it('extracts actual cost from Anthropic-shaped response (usage.input_tokens)', async () => {
+    const run = createRun('test')
+    const fn = run.guard(
+      async function callAnthropic() {
+        return {
+          model: 'claude-opus-4-6',
+          usage: { input_tokens: 800, output_tokens: 400 },
+        }
+      },
+      { model: 'anthropic/claude-opus-4-6' },
+    )
+
+    await fn()
+    await run.end()
+
+    const step = await readFirstStep()
+    expect(step.tokensIn).toBe(800)
+    expect(step.tokensOut).toBe(400)
+  })
+
+  it('uses custom costExtractor when provided', async () => {
+    const run = createRun('test')
+    const fn = run.guard(
+      async function callCustom() {
+        return { meta: { in: 300, out: 150 } }
+      },
+      {
+        model: 'openai/gpt-4o',
+        costExtractor: (result) => {
+          const r = result as { meta: { in: number; out: number } }
+          return { tokensIn: r.meta.in, tokensOut: r.meta.out }
+        },
+      },
+    )
+
+    await fn()
+    await run.end()
+
+    const step = await readFirstStep()
+    expect(step.tokensIn).toBe(300)
+    expect(step.tokensOut).toBe(150)
+  })
+
+  it('falls back to pre-flight estimate when result has no usage data', async () => {
+    const run = createRun('test')
+    const fn = run.guard(
+      async function noUsage() {
+        return { data: 'plain result, no usage' }
+      },
+      { model: 'openai/gpt-4o', estimatedTokensIn: 100, estimatedTokensOut: 50 },
+    )
+
+    await fn()
+    await run.end()
+
+    const step = await readFirstStep()
+    expect(step.tokensIn).toBe(100)
+    expect(step.tokensOut).toBe(50)
+  })
+
+  it('works without model specified — tracks steps but skips cost', async () => {
+    const run = createRun('test')
+    const fn = run.guard(async function noCost() {
+      return 'plain string result'
+    })
+
+    await expect(fn()).resolves.toBe('plain string result')
+    await run.end()
+  })
+
+  it('backward compat: estimatedTokensIn/Out still work for pre-flight check', async () => {
+    configure({ defaults: { maxCostPerRun: 0.0001 } })
+
+    const run = createRun('test')
+    const fn = run.guard(
+      async function expensive() { return null },
+      { model: 'openai/gpt-4o', estimatedTokensIn: 10_000_000, estimatedTokensOut: 5_000_000 },
+    )
+
+    await expect(fn()).rejects.toThrow(BudgetExceeded)
+  })
+
+  it('auto pre-flight estimate blocks obviously over-budget calls', async () => {
+    configure({ defaults: { maxCostPerRun: 0.000001 } })
+
+    const run = createRun('test')
+    const fn = run.guard(
+      async function hugeArgs(data: unknown) { return data },
+      { model: 'openai/gpt-4o' },
+    )
+    const bigPayload = 'x'.repeat(100_000)
+
+    await expect(fn(bigPayload)).rejects.toThrow(BudgetExceeded)
+  })
+
+  it('global costExtractor via configure() applies to all guard calls', async () => {
+    configure({
+      costExtractor: () => ({ tokensIn: 999, tokensOut: 111 }),
+    })
+
+    const run = createRun('test')
+    const fn = run.guard(async function withGlobal() {
+      return { anything: true }
+    })
+
+    await fn()
+    await run.end()
+
+    const step = await readFirstStep()
+    expect(step.tokensIn).toBe(999)
+    expect(step.tokensOut).toBe(111)
   })
 })

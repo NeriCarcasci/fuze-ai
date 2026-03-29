@@ -48,6 +48,7 @@ export declare class ToolInterceptor {
     intercept(message: ToolCallMessage): Promise<InterceptDecision>;
     /**
      * Record the result of a successful tool call (after response from server).
+     * Extracts actual token usage from the result if available and records it in the trace.
      */
     recordResult(toolName: string, callId: number | string, result: ToolCallResult): void;
     /** Returns current run statistics. */

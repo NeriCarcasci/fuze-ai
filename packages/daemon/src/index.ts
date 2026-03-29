@@ -67,11 +67,16 @@ async function main(): Promise<void> {
     udsServer,
   })
 
+  // Broadcast SDK run/step lifecycle events to dashboard WebSocket clients
+  udsServer.onEvent = (type, data) => {
+    apiServer.broadcast({ type, ...data, timestamp: new Date().toISOString() })
+  }
+
   // Forward alerts to WebSocket clients
   const origEmit = alertManager.emit.bind(alertManager)
   alertManager.emit = (input) => {
     origEmit(input)
-    apiServer.broadcast({ ...input, recordType: 'alert', timestamp: new Date().toISOString() })
+    apiServer.broadcast({ ...input, timestamp: new Date().toISOString() })
   }
 
   // Start servers

@@ -342,9 +342,22 @@ export class APIServer {
   }
 
   private _handleBudget(res: http.ServerResponse): void {
+    const org = this.deps.budgetEnforcer.getOrgSpend()
+    const allAgents = this.deps.budgetEnforcer.getAllAgentSpend()
+
+    // Transform to match dashboard client.ts BudgetResponse interface
+    const agents: Record<string, { spent: number; budget: number }> = {}
+    for (const [agentId, spend] of Object.entries(allAgents)) {
+      agents[agentId] = { spent: spend.today, budget: spend.ceiling }
+    }
+
     this._json(res, 200, {
-      org: this.deps.budgetEnforcer.getOrgSpend(),
-      agents: this.deps.budgetEnforcer.getAllAgentSpend(),
+      org: {
+        dailySpend: org.today,
+        dailyBudget: org.ceiling,
+        runningAgents: this.deps.runManager.getActiveRuns().length,
+      },
+      agents,
     })
   }
 

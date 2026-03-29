@@ -4,9 +4,21 @@ import { BudgetTracker } from './budget-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
+import { createTransport } from './transports/index.js';
 import { createGuardWrapper } from './guard.js';
 import { mergePricing } from './pricing.js';
+// Module-level transport singleton — one connection per process, lazily created.
+let _transport = null;
+function getOrCreateTransport(config) {
+    if (!_transport) {
+        _transport = createTransport(config);
+        void _transport.connect();
+    }
+    return _transport;
+}
 export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js';
+export { extractUsageFromResult } from './pricing.js';
+export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js';
 // Global configuration state
 let globalConfig = {};
 let configLoaded = false;
@@ -48,6 +60,11 @@ export function configure(config) {
     if (config.providers) {
         mergePricing(config.providers);
     }
+    // Reset transport so it picks up new config (cloud key, socket path, etc.)
+    if (_transport) {
+        _transport.disconnect();
+        _transport = null;
+    }
 }
 /**
  * Wraps any sync or async function with Fuze protection.
@@ -78,8 +95,10 @@ export function configure(config) {
 export function guard(fn, options) {
     const config = ensureConfig();
     const resolved = ConfigLoader.merge(config, options);
+    const runId = randomUUID();
+    const transport = getOrCreateTransport(config);
     const context = {
-        runId: randomUUID(),
+        runId,
         budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
         loopDetector: new LoopDetector({
             ...resolved.loopDetection,
@@ -88,7 +107,9 @@ export function guard(fn, options) {
         sideEffectRegistry: new SideEffectRegistry(),
         traceRecorder: new TraceRecorder(resolved.traceOutput),
         stepNumber: 0,
+        transport,
     };
+    void transport.sendRunStart(runId, fn.name || 'anonymous', {});
     const guardFn = createGuardWrapper(resolved, context);
     return guardFn(fn, options);
 }
@@ -119,6 +140,7 @@ export function createRun(agentId = 'default', options) {
     const config = ensureConfig();
     const resolved = ConfigLoader.merge(config, options);
     const runId = randomUUID();
+    const transport = getOrCreateTransport(config);
     const context = {
         runId,
         budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
@@ -129,8 +151,10 @@ export function createRun(agentId = 'default', options) {
         sideEffectRegistry: new SideEffectRegistry(),
         traceRecorder: new TraceRecorder(resolved.traceOutput),
         stepNumber: 0,
+        transport,
     };
     context.traceRecorder.startRun(runId, agentId, resolved);
+    void transport.sendRunStart(runId, agentId, {});
     const guardFn = createGuardWrapper(resolved, context);
     return {
         runId,
@@ -142,6 +166,7 @@ export function createRun(agentId = 'default', options) {
             const { totalCost } = context.budgetTracker.getStatus();
             context.traceRecorder.endRun(runId, status, totalCost);
             await context.traceRecorder.flush();
+            await transport.sendRunEnd(runId, status, totalCost);
         },
     };
 }
@@ -151,5 +176,9 @@ export function createRun(agentId = 'default', options) {
 export function resetConfig() {
     globalConfig = {};
     configLoaded = false;
+    if (_transport) {
+        _transport.disconnect();
+        _transport = null;
+    }
 }
 //# sourceMappingURL=index.js.map

@@ -20,9 +20,23 @@ export interface GuardOptions {
     onLoop?: 'kill' | 'warn' | 'skip';
     /** Model identifier for cost estimation (e.g., 'openai/gpt-4o'). */
     model?: string;
-    /** Estimated input tokens for cost calculation. */
+    /**
+     * Custom extractor called on the return value to read actual token usage.
+     * Overrides auto-detection for all providers. Return null to fall back to pre-flight estimate.
+     */
+    costExtractor?: (result: unknown) => {
+        tokensIn: number;
+        tokensOut: number;
+    } | null;
+    /**
+     * @deprecated Fuze now reads usage from the response automatically.
+     * Still honoured as a pre-flight budget check when auto-extraction is unavailable.
+     */
     estimatedTokensIn?: number;
-    /** Estimated output tokens for cost calculation. */
+    /**
+     * @deprecated Fuze now reads usage from the response automatically.
+     * Still honoured as a pre-flight budget check when auto-extraction is unavailable.
+     */
     estimatedTokensOut?: number;
 }
 /**
@@ -49,6 +63,31 @@ export interface FuzeConfig {
         input: number;
         output: number;
     }>;
+    /**
+     * Global cost extractor applied to all guarded functions.
+     * Per-guard `costExtractor` takes precedence when both are set.
+     */
+    costExtractor?: (result: unknown) => {
+        tokensIn: number;
+        tokensOut: number;
+    } | null;
+    /** Connect to the Fuze daemon for global budget enforcement and live dashboard. */
+    daemon?: {
+        enabled?: boolean;
+        /** UDS socket path or Windows named pipe. Defaults to platform default. */
+        socketPath?: string;
+    };
+    /**
+     * Cloud telemetry — only set this if you are a paid Fuze Cloud customer.
+     * Free/self-hosted users leave this unset entirely.
+     * Can also be configured via the FUZE_API_KEY environment variable.
+     */
+    cloud?: {
+        /** API key from app.fuze-ai.tech. Format: fz_live_… or fz_test_… */
+        apiKey?: string;
+        /** Override the default cloud endpoint. Defaults to https://api.fuze-ai.tech */
+        endpoint?: string;
+    };
 }
 /**
  * Fully resolved options after merging defaults, fuze.toml, and per-function guard options.
@@ -64,6 +103,10 @@ export interface ResolvedOptions {
     sideEffect: boolean;
     compensate?: (...args: unknown[]) => unknown | Promise<unknown>;
     model?: string;
+    costExtractor?: (result: unknown) => {
+        tokensIn: number;
+        tokensOut: number;
+    } | null;
     estimatedTokensIn?: number;
     estimatedTokensOut?: number;
     loopDetection: {

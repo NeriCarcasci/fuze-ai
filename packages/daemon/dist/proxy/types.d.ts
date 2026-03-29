@@ -58,6 +58,8 @@ export interface ToolRawConfig {
     side_effect: boolean;
     max_calls_per_run: number;
     timeout: number;
+    /** Model identifier used for actual cost calculation from response usage. */
+    model: string;
 }
 export declare function isRequest(msg: JsonRpcMessage): msg is JsonRpcRequest;
 export declare function isResponse(msg: JsonRpcMessage): msg is JsonRpcResponse;

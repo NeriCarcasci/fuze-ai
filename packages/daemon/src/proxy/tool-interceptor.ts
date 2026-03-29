@@ -8,6 +8,7 @@ import type {
   ToolCallResult,
 } from './types.js'
 import { ToolConfig } from './tool-config.js'
+import { extractUsageFromResult } from './extract-usage.js'
 
 // ── Inline lightweight budget tracker ─────────────────────────────────────────
 
@@ -98,6 +99,8 @@ interface TraceStep {
   endedAt?: string
   latencyMs?: number
   estimatedCost: number
+  tokensIn?: number
+  tokensOut?: number
   blocked: boolean
   blockReason?: string
   fuzeEvent?: string
@@ -275,6 +278,7 @@ export class ToolInterceptor {
 
   /**
    * Record the result of a successful tool call (after response from server).
+   * Extracts actual token usage from the result if available and records it in the trace.
    */
   recordResult(toolName: string, callId: number | string, result: ToolCallResult): void {
     const pending = this.pendingCalls.get(callId)
@@ -282,6 +286,9 @@ export class ToolInterceptor {
     this.pendingCalls.delete(callId)
 
     const latencyMs = Date.now() - pending.startedAt
+
+    // Try to extract actual token usage from the result (present when MCP tool wraps an LLM)
+    const extracted = extractUsageFromResult(result)
 
     void this._appendTrace({
       recordType: 'step',
@@ -293,6 +300,7 @@ export class ToolInterceptor {
       endedAt: new Date().toISOString(),
       latencyMs,
       estimatedCost: pending.estimatedCost,
+      ...(extracted ? { tokensIn: extracted.tokensIn, tokensOut: extracted.tokensOut } : {}),
       blocked: false,
     })
   }

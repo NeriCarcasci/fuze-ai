@@ -54,6 +54,7 @@ export class ConfigLoader {
       sideEffect: guardOptions.sideEffect ?? DEFAULTS.sideEffect,
       compensate: guardOptions.compensate,
       model: guardOptions.model,
+      costExtractor: guardOptions.costExtractor ?? projectConfig.costExtractor,
       estimatedTokensIn: guardOptions.estimatedTokensIn,
       estimatedTokensOut: guardOptions.estimatedTokensOut,
       loopDetection: {

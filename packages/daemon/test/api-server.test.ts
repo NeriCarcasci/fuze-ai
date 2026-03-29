@@ -124,7 +124,7 @@ describe('APIServer', () => {
     budgetEnforcer.recordSpend('a1', 1.5)
     const { status, body } = await get(`http://127.0.0.1:${TEST_PORT}/api/budget`)
     expect(status).toBe(200)
-    expect((body as { org: { today: number } }).org.today).toBeCloseTo(1.5)
+    expect((body as { org: { dailySpend: number } }).org.dailySpend).toBeCloseTo(1.5)
   })
 
   it('GET /api/agents/:id/health returns reliability stats', async () => {

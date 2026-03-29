@@ -9,6 +9,8 @@ export interface ResolvedToolConfig {
   maxCallsPerRun: number
   /** Timeout in ms. Default: 30000. */
   timeout: number
+  /** Model identifier for actual cost calculation from response usage. */
+  model?: string
 }
 
 const BUILTIN_DEFAULTS: ResolvedToolConfig = {
@@ -16,6 +18,7 @@ const BUILTIN_DEFAULTS: ResolvedToolConfig = {
   sideEffect: false,
   maxCallsPerRun: Infinity,
   timeout: 30_000,
+  model: undefined,
 }
 
 /**
@@ -50,6 +53,10 @@ export class ToolConfig {
         raw?.timeout
         ?? defaults?.timeout
         ?? BUILTIN_DEFAULTS.timeout,
+      model:
+        raw?.model
+        ?? defaults?.model
+        ?? BUILTIN_DEFAULTS.model,
     }
   }
 

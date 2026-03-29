@@ -14,6 +14,8 @@ export class UDSServer {
     connections = new Set();
     /** stepId → step metadata buffered between step_start and step_end */
     pendingSteps = new Map();
+    /** Set after construction to broadcast run/step events to WebSocket clients. */
+    onEvent;
     constructor(socketPath, deps) {
         this.socketPath = socketPath;
         this.deps = deps;
@@ -114,6 +116,7 @@ export class UDSServer {
         const { runManager, budgetEnforcer, patternAnalyser, auditStore, alertManager } = this.deps;
         switch (msg.type) {
             case 'run_start': {
+                const startedAt = new Date().toISOString();
                 runManager.startRun(msg.runId, msg.agentId, msg.config ?? {}, {
                     agentVersion: msg.agentVersion,
                     modelProvider: msg.modelProvider,
@@ -126,7 +129,7 @@ export class UDSServer {
                     modelProvider: msg.modelProvider ?? '',
                     modelName: msg.modelName ?? '',
                     status: 'running',
-                    startedAt: new Date().toISOString(),
+                    startedAt,
                     endedAt: undefined,
                     totalCost: 0,
                     totalTokensIn: 0,
@@ -134,11 +137,13 @@ export class UDSServer {
                     totalSteps: 0,
                     configJson: JSON.stringify(msg.config ?? {}),
                 });
+                this.onEvent?.('run_start', { runId: msg.runId, agentId: msg.agentId, startedAt });
                 return null; // no response for run_start
             }
             case 'run_end': {
                 runManager.endRun(msg.runId, msg.status, msg.totalCost);
-                await auditStore.updateRunStatus(msg.runId, msg.status, msg.totalCost, new Date().toISOString());
+                const endedAt = new Date().toISOString();
+                await auditStore.updateRunStatus(msg.runId, msg.status, msg.totalCost, endedAt);
                 // Feed pattern analyser with outcome
                 const run = runManager.getRun(msg.runId);
                 if (run) {
@@ -154,6 +159,7 @@ export class UDSServer {
                         });
                     }
                 }
+                this.onEvent?.('run_end', { runId: msg.runId, status: msg.status, totalCost: msg.totalCost, endedAt });
                 return null;
             }
             case 'step_start': {
@@ -210,12 +216,13 @@ export class UDSServer {
                     });
                 }
                 // Persist step to audit store
+                const stepEndedAt = new Date().toISOString();
                 await auditStore.insertStep({
                     stepId: msg.stepId,
                     runId: msg.runId,
                     stepNumber: pending?.stepNumber ?? 0,
                     startedAt: pending?.startedAt ?? new Date().toISOString(),
-                    endedAt: new Date().toISOString(),
+                    endedAt: stepEndedAt,
                     toolName: pending?.toolName ?? '',
                     argsHash: pending?.argsHash ?? '',
                     hasSideEffect: pending?.sideEffect ? 1 : 0,
@@ -224,6 +231,15 @@ export class UDSServer {
                     tokensOut: msg.tokensOut,
                     latencyMs: msg.latencyMs,
                     error: msg.error ?? null,
+                });
+                this.onEvent?.('step_end', {
+                    runId: msg.runId,
+                    stepId: msg.stepId,
+                    toolName: pending?.toolName ?? '',
+                    costUsd: msg.costUsd,
+                    latencyMs: msg.latencyMs,
+                    error: msg.error ?? null,
+                    endedAt: stepEndedAt,
                 });
                 return null;
             }
@@ -253,6 +269,13 @@ export class UDSServer {
                         details: { runId: msg.runId, ...msg.details },
                     });
                 }
+                this.onEvent?.('guard_event', {
+                    runId: msg.runId,
+                    stepId: msg.stepId,
+                    eventType: msg.eventType,
+                    severity: msg.severity,
+                    details: msg.details,
+                });
                 return null;
             }
             default:

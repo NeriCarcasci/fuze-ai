@@ -1,6 +1,10 @@
 import type { FuzeConfig, GuardOptions, RunContext } from './types.js';
 export type { GuardOptions, FuzeConfig, RunContext } from './types.js';
 export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js';
+export { extractUsageFromResult } from './pricing.js';
+export type { ExtractedUsage } from './pricing.js';
+export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js';
+export type { TelemetryTransport } from './transports/index.js';
 /**
  * Set global configuration programmatically (alternative to fuze.toml).
  * Values set here override fuze.toml values.

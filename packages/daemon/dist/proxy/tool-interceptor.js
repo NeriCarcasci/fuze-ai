@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { ToolConfig } from './tool-config.js';
+import { extractUsageFromResult } from './extract-usage.js';
 // ── Inline lightweight budget tracker ─────────────────────────────────────────
 class ProxyBudget {
     ceiling;
@@ -188,6 +189,7 @@ export class ToolInterceptor {
     }
     /**
      * Record the result of a successful tool call (after response from server).
+     * Extracts actual token usage from the result if available and records it in the trace.
      */
     recordResult(toolName, callId, result) {
         const pending = this.pendingCalls.get(callId);
@@ -195,6 +197,8 @@ export class ToolInterceptor {
             return;
         this.pendingCalls.delete(callId);
         const latencyMs = Date.now() - pending.startedAt;
+        // Try to extract actual token usage from the result (present when MCP tool wraps an LLM)
+        const extracted = extractUsageFromResult(result);
         void this._appendTrace({
             recordType: 'step',
             stepId: randomUUID(),
@@ -205,6 +209,7 @@ export class ToolInterceptor {
             endedAt: new Date().toISOString(),
             latencyMs,
             estimatedCost: pending.estimatedCost,
+            ...(extracted ? { tokensIn: extracted.tokensIn, tokensOut: extracted.tokensOut } : {}),
             blocked: false,
         });
     }

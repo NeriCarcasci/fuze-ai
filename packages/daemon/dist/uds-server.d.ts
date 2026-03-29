@@ -23,6 +23,8 @@ export declare class UDSServer {
     private readonly connections;
     /** stepId → step metadata buffered between step_start and step_end */
     private readonly pendingSteps;
+    /** Set after construction to broadcast run/step events to WebSocket clients. */
+    onEvent?: (type: string, data: Record<string, unknown>) => void;
     constructor(socketPath: string, deps: UDSServerDeps);
     /**
      * Start listening on the socket path.

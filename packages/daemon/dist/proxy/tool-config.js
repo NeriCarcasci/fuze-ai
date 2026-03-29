@@ -3,6 +3,7 @@ const BUILTIN_DEFAULTS = {
     sideEffect: false,
     maxCallsPerRun: Infinity,
     timeout: 30_000,
+    model: undefined,
 };
 /**
  * Resolves per-tool configuration from `fuze.toml [proxy.tools]`.
@@ -33,6 +34,9 @@ export class ToolConfig {
             timeout: raw?.timeout
                 ?? defaults?.timeout
                 ?? BUILTIN_DEFAULTS.timeout,
+            model: raw?.model
+                ?? defaults?.model
+                ?? BUILTIN_DEFAULTS.model,
         };
     }
     /**

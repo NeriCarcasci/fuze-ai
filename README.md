@@ -19,8 +19,8 @@
 <p align="center">
   <img src="https://img.shields.io/npm/v/fuze-ai?color=ff5544&label=npm" alt="npm version"/>
   <img src="https://img.shields.io/pypi/v/fuze-ai?color=ff5544&label=pypi" alt="pypi version"/>
-  <img src="https://img.shields.io/github/license/fuze-ai/fuze?color=ff5544" alt="license"/>
-  <img src="https://img.shields.io/github/stars/fuze-ai/fuze?color=ff5544" alt="stars"/>
+  <img src="https://img.shields.io/github/license/nericarcasci/fuze-ai?color=ff5544" alt="license"/>
+  <img src="https://img.shields.io/github/stars/nericarcasci/fuze-ai?color=ff5544" alt="stars"/>
 </p>
 
 

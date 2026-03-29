@@ -8,6 +8,7 @@
   <a href="#quickstart">Quickstart</a> ·
   <a href="#why-fuze">Why Fuze</a> ·
   <a href="#how-it-works">How It Works</a> ·
+  <a href="#auto-cost-extraction">Auto Cost Extraction</a> ·
   <a href="#python">Python</a> ·
   <a href="#mcp-proxy">MCP Proxy</a> ·
   <a href="#dashboard">Dashboard</a> ·
@@ -46,18 +47,19 @@ const search = guard(async (query: string) => {
   return await vectorDb.search(query)
 })
 
+// Pass model — Fuze reads actual token counts from the LLM response automatically.
+// No manual estimatedTokensIn/Out needed.
+const analyse = guard(
+  async (text: string) => openai.chat.completions.create({ model: 'gpt-4o', messages: [...] }),
+  { model: 'openai/gpt-4o', maxCost: 0.50 }
+)
+
 // Mark dangerous operations. Fuze won't blindly retry these.
 const sendInvoice = guard(
   async (customerId: string, amount: number) => {
     return await stripe.createInvoice(customerId, amount)
   },
   { sideEffect: true, compensate: cancelInvoice }
-)
-
-// Set a cost ceiling. Fuze kills the run before you overspend.
-const analyse = guard(
-  async (text: string) => llm.complete(`Analyse: ${text}`),
-  { maxCost: 0.50 }
 )
 ```
 
@@ -75,15 +77,15 @@ from fuze_ai import guard
 def search(query: str):
     return vector_db.search(query)
 
+# Pass model — Fuze reads actual tokens from the response automatically.
+@guard(model='openai/gpt-4o', max_cost=0.50)
+def analyse(text: str):
+    return openai.chat.completions.create(model='gpt-4o', messages=[...])
+
 # Side-effect: Fuze tracks this and can roll it back.
 @guard(side_effect=True, compensate=cancel_invoice)
 def send_invoice(customer_id: str, amount: float):
     return stripe.create_invoice(customer_id, amount)
-
-# Cost cap
-@guard(max_cost=0.50)
-def analyse(text: str):
-    return llm.complete(f"Analyse: {text}")
 ```
 
 ## Why Fuze
@@ -93,7 +95,7 @@ Every major agent framework (LangGraph, CrewAI, Google ADK, Microsoft Agent Fram
 | Problem | What happens today | What Fuze does |
 |---|---|---|
 | **Runaway loops** | Agent retries forever. You find out Monday. | Detects repeated tool calls, semantic stalls, cost velocity spikes. Kills or recovers automatically. |
-| **Budget explosion** | No ceiling. Token spend compounds silently. | Hard $/token/time limits per step and per run. Pre-execution cost estimation. |
+| **Budget explosion** | No ceiling. Token spend compounds silently. | Hard $/token/time limits per step and per run. Automatic cost extraction from every LLM response. |
 | **Duplicate side-effects** | Checkpoint-restore causes double payments ([paper](https://arxiv.org/html/2603.20625v1)). | Tracks which calls changed the real world. Idempotency keys. Compensation on rollback. |
 | **No audit trail** | Logs say "Agent stopped due to max iterations." | Full decision trace: what the LLM saw, decided, called, and what happened (replayable). |
 | **EU AI Act** | 4 months until enforcement. €35M or 7% penalty. | Art. 12 logging, Art. 14 human oversight, Art. 73 incident reports (out of the box). |
@@ -146,6 +148,63 @@ npx fuze-ai tui          # Terminal UI (works over SSH)
 
 Live runs, trace replay, budget charts, kill buttons, and an EU AI Act compliance panel.
 
+## Auto Cost Extraction
+
+When you pass `model` to `guard()`, Fuze automatically reads the actual token counts from the LLM's response object — no manual `estimatedTokensIn`/`estimatedTokensOut` needed.
+
+```typescript
+import { guard, createRun } from 'fuze-ai'
+
+// Fuze inspects the return value and finds the usage fields automatically.
+const callLLM = guard(
+  async (prompt: string) => openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }] }),
+  { model: 'openai/gpt-4o' }
+)
+
+// All tools in the same run share one budget + loop detector.
+const run = createRun('my-agent', { maxCostPerRun: 2.00 })
+const search = run.guard(searchFn, { model: 'openai/gpt-4o' })
+const summarise = run.guard(summariseFn, { model: 'anthropic/claude-opus-4-6' })
+```
+
+Fuze recognises response shapes from all major providers out of the box:
+
+| Provider | Response shape detected |
+|---|---|
+| OpenAI, OpenRouter, Azure, Together, Fireworks, Mistral | `usage.prompt_tokens` / `usage.completion_tokens` |
+| Anthropic | `usage.input_tokens` / `usage.output_tokens` |
+| Google Gemini | `usageMetadata.promptTokenCount` / `candidatesTokenCount` |
+| Vercel AI SDK, Mastra | `usage.promptTokens` / `usage.completionTokens` |
+| LangChain AIMessage | `usage_metadata.input_tokens` / `output_tokens` |
+| LangChain legacy ChatResult | `llm_output.token_usage.prompt_tokens` |
+| AWS Bedrock | `usage.inputTokens` / `usage.outputTokens` |
+| Cohere | `meta.tokens.input_tokens` / `output_tokens` |
+
+For custom providers or non-standard shapes, use `costExtractor`:
+
+```typescript
+const fn = guard(
+  async () => myCustomLLM.call(),
+  {
+    model: 'my-provider/model',
+    costExtractor: (result) => ({
+      tokensIn: result.metadata.input,
+      tokensOut: result.metadata.output,
+    }),
+  }
+)
+```
+
+### Pre-flight budget check
+
+Before the call, Fuze estimates cost from the serialised argument size (4 chars ≈ 1 token, 50% output ratio). This catches obviously over-budget calls before spending any money. After the call, the estimate is replaced with the actual extracted cost.
+
+```typescript
+// This is blocked before the API call is even made — 10M tokens would cost ~$50
+const fn = guard(hugeArgs, { model: 'openai/gpt-4o' })
+await fn('x'.repeat(40_000_000)) // → throws BudgetExceeded immediately
+```
+
 ## Configuration
 
 ```toml
@@ -158,6 +217,11 @@ max_cost_per_step = 1.00
 max_cost_per_run = 10.00
 max_iterations = 25
 kill_on_loop = true
+
+[loop_detection]
+window_size = 20
+repeat_threshold = 3
+max_flat_steps = 5
 
 [daemon]
 socket_path = "/tmp/fuze.sock"
@@ -218,6 +282,8 @@ npx fuze-ai proxy -- npx @modelcontextprotocol/server-postgres
 
 Every `tools/call` is intercepted: budget checked, loop detected, side-effects tracked, and logged. The MCP server and client don't know Fuze exists.
 
+Token usage is extracted automatically from MCP tool responses when they contain recognisable LLM response shapes.
+
 ## EU AI Act
 
 EU AI Act enforcement begins **August 2, 2026**. Penalties up to **€35M or 7% of global annual revenue**.
@@ -244,7 +310,7 @@ Fuze logs every guarded function call:
 - **Timestamps**: start/end per step, ISO 8601
 - **Agent identity**: agent_id, version, model provider, model name
 - **Tool calls**: name, args hash (raw args opt-in), result summary
-- **Cost**: tokens in/out, USD per provider pricing
+- **Cost**: tokens in/out, USD per provider pricing — extracted automatically from LLM responses
 - **Guard decisions**: proceed, loop detected, budget checked, side-effect flagged
 - **Human oversight**: who intervened, what they decided
 - **Side-effect status**: was this a write? compensation status?
@@ -255,11 +321,12 @@ All records are **append-only** with a hash chain for tamper detection. By defau
 
 - [x] TypeScript core library
 - [x] Python SDK with `@guard` decorator
-- [ ] Runtime daemon with cross-run pattern detection
-- [ ] MCP proxy mode
-- [ ] Side-effect compensation engine
+- [x] Automatic cost extraction from LLM response objects (8 provider shapes)
+- [x] Runtime daemon with cross-run pattern detection
+- [x] MCP proxy mode
+- [x] Side-effect compensation engine
+- [x] Web dashboard + EU AI Act compliance panel
 - [ ] TUI dashboard (Ink)
-- [ ] Web dashboard + EU AI Act compliance panel
 - [ ] LangGraph adapter
 - [ ] CrewAI adapter
 - [ ] Google ADK adapter

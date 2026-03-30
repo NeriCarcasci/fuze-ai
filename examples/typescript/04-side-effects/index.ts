@@ -1,93 +1,95 @@
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { guard } from 'fuze-ai'
 
-// --- Simulated services ---
+const INVOICE_FILE = join(import.meta.dirname, 'invoice.json')
 
 interface Invoice {
   id: string
   customerId: string
   amount: number
   status: 'open' | 'void'
+  createdAt: string
 }
 
-const invoiceDb: Invoice[] = []
-
+// Real side effect: writes an invoice file to disk
 async function createInvoice(customerId: string, amount: number): Promise<Invoice> {
-  await new Promise(r => setTimeout(r, 150))
   const invoice: Invoice = {
     id: `inv_${Date.now()}`,
     customerId,
     amount,
     status: 'open',
+    createdAt: new Date().toISOString(),
   }
-  invoiceDb.push(invoice)
-  console.log(`  [billing] Created invoice ${invoice.id} for $${amount.toFixed(2)}`)
+  writeFileSync(INVOICE_FILE, JSON.stringify(invoice, null, 2))
+  console.log(`  [side-effect] Wrote ${INVOICE_FILE}`)
+  console.log(`  [side-effect] Invoice ${invoice.id}: $${amount.toFixed(2)} for ${customerId}`)
   return invoice
 }
 
-async function sendEmail(to: string, subject: string): Promise<void> {
-  await new Promise(r => setTimeout(r, 100))
-  // Simulate a transient email-provider failure
-  throw new Error(`SMTP error: connection to mail server timed out`)
+// Simulates a step that fails
+async function sendConfirmationEmail(invoiceId: string, to: string): Promise<void> {
+  throw new Error(`SMTP error: connection to ${to} timed out (invoice: ${invoiceId})`)
 }
 
-// --- Compensation handlers ---
-
+// Compensation: deletes the invoice file from disk
 async function cancelInvoice(result: unknown): Promise<void> {
   const invoice = result as Invoice
-  invoice.status = 'void'
-  console.log(`  [compensation] Voided invoice ${invoice.id}`)
+  if (existsSync(INVOICE_FILE)) {
+    const content = readFileSync(INVOICE_FILE, 'utf-8')
+    const saved = JSON.parse(content) as Invoice
+    saved.status = 'void'
+    writeFileSync(INVOICE_FILE, JSON.stringify(saved, null, 2))
+    console.log(`  [compensation] Voided invoice ${invoice.id} on disk`)
+  }
 }
 
-async function unsendEmail(_result: unknown): Promise<void> {
-  // In real life you might recall a scheduled send or mark it cancelled.
-  console.log(`  [compensation] Recalled email (no-op, send had failed)`)
-}
-
-// --- Guarded functions ---
-
+// Guard with side-effect tracking and compensation handler
 const protectedCreateInvoice = guard(createInvoice, {
   sideEffect: true,
   compensate: cancelInvoice,
 })
 
-const protectedSendEmail = guard(sendEmail, {
+const protectedSendEmail = guard(sendConfirmationEmail, {
   sideEffect: true,
-  compensate: unsendEmail,
 })
 
-// --- Main workflow ---
-
 async function main() {
-  console.log('Fuze AI — Side-Effect Tracking & Compensation\n')
+  console.log('Fuze AI -- Side-Effect Tracking & Compensation\n')
 
-  // Step 1: create invoice (succeeds)
+  // Clean up any leftover invoice from a previous run
+  if (existsSync(INVOICE_FILE)) unlinkSync(INVOICE_FILE)
+
+  // Step 1: Create invoice (real file written to disk)
   console.log('Step 1: Creating invoice...')
-  const invoice = await protectedCreateInvoice('cust_42', 249.99)
-  console.log(`  Invoice created: ${invoice.id}\n`)
+  const invoice = await protectedCreateInvoice('acme-corp', 499.99)
+  console.log(`  File exists: ${existsSync(INVOICE_FILE)}\n`)
 
-  // Step 2: send confirmation email (fails)
+  // Step 2: Send email (will fail)
   console.log('Step 2: Sending confirmation email...')
   try {
-    await protectedSendEmail('billing@acme.co', `Invoice ${invoice.id}`)
-    console.log('  Email sent successfully.\n')
+    await protectedSendEmail(invoice.id, 'billing@acme.example.com')
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.log(`  Email FAILED: ${message}\n`)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`  FAILED: ${msg}\n`)
   }
 
-  // --- Show what Fuze tracked ---
-  console.log('--- Fuze side-effect summary ---')
-  console.log('Invoice in DB:', invoiceDb)
+  // Step 3: Manually trigger compensation (in a real daemon pipeline this is automatic)
+  console.log('Step 3: Running compensation...')
+  await cancelInvoice(invoice)
   console.log()
-  console.log('Because createInvoice was marked sideEffect: true with a')
-  console.log('compensate handler, Fuze knows how to roll it back.')
-  console.log('The sendEmail step also had a compensate handler, but its')
-  console.log('side-effect was never recorded (it threw before completing).')
-  console.log()
-  console.log('In a real agent loop, if the run is killed (budget or loop),')
-  console.log('Fuze calls each compensation function in reverse order.')
-  console.log()
-  console.log('Check ./fuze-traces.jsonl for the full trace.')
+
+  // Verify the invoice was voided
+  if (existsSync(INVOICE_FILE)) {
+    const final = JSON.parse(readFileSync(INVOICE_FILE, 'utf-8')) as Invoice
+    console.log(`Invoice status on disk: "${final.status}"`)
+  }
+
+  console.log('\nThe invoice was created (real file) then voided via compensation.')
+  console.log('Check ./fuze-traces.jsonl for the side-effect trace.')
+
+  // Clean up
+  if (existsSync(INVOICE_FILE)) unlinkSync(INVOICE_FILE)
 }
 
 main().catch(console.error)

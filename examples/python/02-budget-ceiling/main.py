@@ -1,17 +1,19 @@
 """
 Fuze AI -- Example 02: Budget Ceiling
 
-Demonstrates per-run budget limits and per-call cost caps.
-A $1.00 session budget is configured globally, and each call is
-individually capped at $0.30. The loop runs 5 iterations, so the
-budget is exceeded on iteration 4 (4 x $0.30 = $1.20 > $1.00).
+Demonstrates per-run budget limits with automatic cost extraction.
+Each call returns an OpenAI-shaped response; Fuze reads usage data
+and applies gpt-4o pricing automatically.
+Run ceiling is $1.00; calls are blocked once the budget is exhausted.
 """
 
 import asyncio
+import hashlib
+
 from fuze_ai import configure, guard, BudgetExceeded
 
 
-# Set a $1.00 budget ceiling for the entire run.
+# $1.00 run ceiling. Built-in gpt-4o pricing is used automatically.
 configure({
     "defaults": {
         "max_cost_per_run": 1.00,
@@ -19,25 +21,39 @@ configure({
 })
 
 
-@guard(max_cost=0.30)
-async def call_llm(prompt: str) -> str:
-    """Simulate an LLM call that costs ~$0.30 each time."""
-    await asyncio.sleep(0.1)
-    return f'LLM response for: "{prompt}"'
+@guard(
+    max_cost=0.50,           # per-step ceiling ($0.50)
+    model="openai/gpt-4o",  # pricing table; cost auto-extracted from response usage
+)
+async def analyse_chunk(chunk: str) -> dict:
+    """Analyse a text chunk. Returns OpenAI-shaped response for auto cost extraction."""
+    h = hashlib.sha256(chunk.encode()).hexdigest()
+    return {
+        "result": f'Chunk "{chunk}" analysed: sha256={h[:16]}...',
+        "usage": {"prompt_tokens": 40_000, "completion_tokens": 18_000},
+        "model": "gpt-4o",
+    }
 
 
 async def main() -> None:
     print("Fuze AI -- Budget Ceiling Example\n")
-    print(f"Session budget : $1.00")
-    print(f"Per-call cap   : $0.30\n")
+    print("Run ceiling    : $1.00")
+    print("Step ceiling   : $0.50")
+    print("Cost/call      : auto-extracted from response usage (gpt-4o pricing)\n")
 
-    for i in range(1, 6):
+    chunks = ["quarterly-report", "customer-feedback", "incident-log", "roadmap-draft", "compliance-audit"]
+
+    for i, chunk in enumerate(chunks, 1):
         try:
-            result = await call_llm(f"Summarize document {i}")
-            print(f"Call {i} OK : {result}")
+            response = await analyse_chunk(chunk)
+            print(f"Call {i} OK      : {response['result']}")
         except BudgetExceeded as exc:
             print(f"Call {i} BLOCKED : {exc}")
-            print("\nBudget enforcement triggered as expected.")
+            print(f"  level    : {exc.level}")
+            print(f"  estimated: ${exc.estimated_cost:.4f}")
+            print(f"  ceiling  : ${exc.ceiling:.4f}")
+            print(f"  spent    : ${exc.spent:.4f}")
+            print("\nBudget enforcement prevented runaway spend.")
             break
 
     print("\nDone. Check ./fuze-traces.jsonl for cost details.")

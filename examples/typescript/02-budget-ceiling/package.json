@@ -6,7 +6,7 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
-    "fuze-ai": "latest"
+    "fuze-ai": "file:../../packages/core"
   },
   "devDependencies": {
     "tsx": "^4.0.0"

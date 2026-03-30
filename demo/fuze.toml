@@ -1,0 +1,10 @@
+[defaults]
+max_retries = 2
+timeout = 10000
+max_cost_per_run = 2.00
+max_iterations = 20
+
+[loop_detection]
+window_size = 5
+repeat_threshold = 3
+max_flat_steps = 3

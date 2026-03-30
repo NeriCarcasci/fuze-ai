@@ -11,7 +11,8 @@ context with unified cost accounting.
    from the same $5.00 budget.
 
 2. **Researcher agent** calls `webSearch` and `summarise`, each wrapped with
-   `run.guard()` and tagged with model/token estimates for cost tracking.
+   `run.guard()` and tagged with a model for cost tracking. Fuze auto-extracts
+   cost from the OpenAI-shaped usage data returned by each call.
 
 3. **Writer agent** calls `draft` and `editDraft` using the same run. If the
    researcher already spent most of the budget, the writer's calls may trigger
@@ -29,10 +30,10 @@ import { createRun } from 'fuze-ai'
 
 const run = createRun('research-team', { maxCostPerRun: 5.00 })
 
+// model tells Fuze which pricing table to use;
+// cost is auto-extracted from the OpenAI-shaped usage data in the response.
 const search = run.guard(webSearch, {
   model: 'openai/gpt-4o',
-  estimatedTokensIn: 500,
-  estimatedTokensOut: 200,
 })
 
 await search('query')

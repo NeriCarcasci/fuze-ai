@@ -26,6 +26,10 @@ import { RunManager } from './run-manager.js'
 import { AlertManager } from './alert-manager.js'
 import { UDSServer } from './uds-server.js'
 import { APIServer } from './api-server.js'
+import { ConfigCache } from './config-cache.js'
+import { ApiSync } from './api-sync.js'
+
+const DEFAULT_CLOUD_ENDPOINT = 'https://api.fuze-ai.tech'
 
 async function main(): Promise<void> {
   // Parse --config flag
@@ -45,6 +49,21 @@ async function main(): Promise<void> {
   const auditStore = new AuditStore(config.storagePath)
   await auditStore.init()
 
+  // Config cache — always created (cheap, uses same SQLite file as audit store)
+  const configCache = new ConfigCache(config.storagePath)
+  configCache.init()
+
+  // Cloud API sync — only active when FUZE_API_KEY is set
+  let apiSync: ApiSync | null = null
+  const apiKey = process.env['FUZE_API_KEY']
+  if (apiKey) {
+    const projectId = process.env['FUZE_PROJECT_ID'] ?? 'default'
+    const endpoint = process.env['FUZE_API_ENDPOINT'] ?? DEFAULT_CLOUD_ENDPOINT
+    apiSync = new ApiSync(apiKey, endpoint, configCache, projectId)
+    apiSync.start()
+    process.stderr.write(`[fuze-daemon] Cloud sync active (project: ${projectId})\n`)
+  }
+
   const budgetEnforcer = new BudgetEnforcer(config.budget)
   const patternAnalyser = new PatternAnalyser()
   const runManager = new RunManager()
@@ -56,6 +75,7 @@ async function main(): Promise<void> {
     patternAnalyser,
     auditStore,
     alertManager,
+    configCache,
   })
 
   const apiServer = new APIServer(config.apiPort, {
@@ -91,9 +111,11 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     process.stderr.write(`\n[fuze-daemon] Received ${signal}, shutting down...\n`)
     try {
+      apiSync?.stop()
       await udsServer.stop()
       await apiServer.stop()
       await auditStore.close()
+      configCache.close()
     } catch (err) {
       process.stderr.write(`[fuze-daemon] Shutdown error: ${(err as Error).message}\n`)
     }

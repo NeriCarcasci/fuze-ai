@@ -80,6 +80,10 @@ export interface FuzeConfig {
     /** Override the default cloud endpoint. Defaults to https://api.fuze-ai.tech */
     endpoint?: string
   }
+  /** Project settings for tool registration. Can also be set via FUZE_PROJECT_ID env var. */
+  project?: {
+    projectId?: string
+  }
 }
 
 /**

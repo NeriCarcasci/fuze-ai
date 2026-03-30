@@ -4,20 +4,22 @@ import { BudgetTracker } from './budget-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
-import { createTransport } from './transports/index.js';
+import { createService } from './services/index.js';
 import { createGuardWrapper } from './guard.js';
 import { mergePricing } from './pricing.js';
-// Module-level transport singleton — one connection per process, lazily created.
-let _transport = null;
-function getOrCreateTransport(config) {
-    if (!_transport) {
-        _transport = createTransport(config);
-        void _transport.connect();
+// Module-level service singleton — one connection per process, lazily created.
+let _service = null;
+function getOrCreateService(config) {
+    if (!_service) {
+        _service = createService(config);
+        void _service.connect();
     }
-    return _transport;
+    return _service;
 }
 export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js';
 export { extractUsageFromResult } from './pricing.js';
+export { createService, ApiService, DaemonService, NoopService } from './services/index.js';
+/** @deprecated Use FuzeService / createService() instead. */
 export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js';
 // Global configuration state
 let globalConfig = {};
@@ -60,10 +62,10 @@ export function configure(config) {
     if (config.providers) {
         mergePricing(config.providers);
     }
-    // Reset transport so it picks up new config (cloud key, socket path, etc.)
-    if (_transport) {
-        _transport.disconnect();
-        _transport = null;
+    // Reset service so it picks up new config (cloud key, socket path, etc.)
+    if (_service) {
+        _service.disconnect();
+        _service = null;
     }
 }
 /**
@@ -96,7 +98,7 @@ export function guard(fn, options) {
     const config = ensureConfig();
     const resolved = ConfigLoader.merge(config, options);
     const runId = randomUUID();
-    const transport = getOrCreateTransport(config);
+    const service = getOrCreateService(config);
     const context = {
         runId,
         budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
@@ -107,9 +109,9 @@ export function guard(fn, options) {
         sideEffectRegistry: new SideEffectRegistry(),
         traceRecorder: new TraceRecorder(resolved.traceOutput),
         stepNumber: 0,
-        transport,
+        service,
     };
-    void transport.sendRunStart(runId, fn.name || 'anonymous', {});
+    void service.sendRunStart(runId, fn.name || 'anonymous', {});
     const guardFn = createGuardWrapper(resolved, context);
     return guardFn(fn, options);
 }
@@ -140,7 +142,7 @@ export function createRun(agentId = 'default', options) {
     const config = ensureConfig();
     const resolved = ConfigLoader.merge(config, options);
     const runId = randomUUID();
-    const transport = getOrCreateTransport(config);
+    const service = getOrCreateService(config);
     const context = {
         runId,
         budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
@@ -151,10 +153,10 @@ export function createRun(agentId = 'default', options) {
         sideEffectRegistry: new SideEffectRegistry(),
         traceRecorder: new TraceRecorder(resolved.traceOutput),
         stepNumber: 0,
-        transport,
+        service,
     };
     context.traceRecorder.startRun(runId, agentId, resolved);
-    void transport.sendRunStart(runId, agentId, {});
+    void service.sendRunStart(runId, agentId, {});
     const guardFn = createGuardWrapper(resolved, context);
     return {
         runId,
@@ -166,7 +168,7 @@ export function createRun(agentId = 'default', options) {
             const { totalCost } = context.budgetTracker.getStatus();
             context.traceRecorder.endRun(runId, status, totalCost);
             await context.traceRecorder.flush();
-            await transport.sendRunEnd(runId, status, totalCost);
+            await service.sendRunEnd(runId, status, totalCost);
         },
     };
 }
@@ -176,9 +178,30 @@ export function createRun(agentId = 'default', options) {
 export function resetConfig() {
     globalConfig = {};
     configLoaded = false;
-    if (_transport) {
-        _transport.disconnect();
-        _transport = null;
+    if (_service) {
+        _service.disconnect();
+        _service = null;
     }
+}
+/**
+ * Register tools with Fuze API/daemon at boot time.
+ * Call once during application startup, before running any agents.
+ * If no API key or daemon is configured, this is a no-op.
+ *
+ * @example
+ * ```ts
+ * import { registerTools } from 'fuze-ai'
+ *
+ * registerTools([
+ *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, maxBudget: 0.5, timeout: 30000 } },
+ *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, maxBudget: 0.1, timeout: 10000 } },
+ * ])
+ * ```
+ */
+export function registerTools(tools) {
+    const config = ensureConfig();
+    const service = getOrCreateService(config);
+    const projectId = config.project?.projectId ?? process.env['FUZE_PROJECT_ID'] ?? 'default';
+    void service.registerTools(projectId, tools);
 }
 //# sourceMappingURL=index.js.map

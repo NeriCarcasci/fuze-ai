@@ -3,7 +3,7 @@ import { BudgetTracker } from './budget-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
-import type { TelemetryTransport } from './transports/index.js';
+import type { FuzeService } from './services/index.js';
 /**
  * Internal context shared across all guarded functions in a run.
  */
@@ -14,8 +14,8 @@ export interface GuardContext {
     sideEffectRegistry: SideEffectRegistry;
     traceRecorder: TraceRecorder;
     stepNumber: number;
-    /** Transport for telemetry — NoopTransport when no daemon/cloud configured. */
-    transport: TelemetryTransport;
+    /** Service for telemetry + remote config — NoopService when no daemon/cloud configured. */
+    service: FuzeService;
 }
 /**
  * Creates the guard wrapper function bound to a specific run context.

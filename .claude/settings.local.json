@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(npx tsc:*)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(find /d/fuze-web/content -type f -name *.md -o -name *.mdx)",
+      "Bash(wc -l /d/fuze-web/content/docs/*.md /d/fuze-web/content/docs/*/*.md)",
+      "Bash(npm install:*)",
+      "Bash(node --experimental-strip-types src/index.ts 5)",
+      "Bash(npx tsx:*)",
+      "Bash(npm run:*)",
+      "Bash(FAILURE_RATE=0.4 npx tsx src/index.ts 10)"
+    ]
+  }
+}

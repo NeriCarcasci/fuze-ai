@@ -1,5 +1,23 @@
 /** JSON-over-newline protocol for SDK ↔ Daemon communication. */
 
+// ── Shared types ──────────────────────────────────────────────────────────────
+
+export interface ToolRegistration {
+  name: string
+  description?: string
+  schema?: object
+  sideEffect: boolean
+  defaults: { maxRetries: number; maxBudget: number; timeout: number }
+}
+
+export interface ToolConfig {
+  maxRetries: number
+  maxBudget: number
+  timeout: number
+  enabled: boolean
+  updatedAt: string
+}
+
 // ── SDK → Daemon ──────────────────────────────────────────────────────────────
 
 export interface RunStartMessage {
@@ -49,7 +67,18 @@ export interface GuardEventMessage {
   details: Record<string, unknown>
 }
 
-export type SDKMessage = RunStartMessage | RunEndMessage | StepStartMessage | StepEndMessage | GuardEventMessage
+export interface RegisterToolsMessage {
+  type: 'register_tools'
+  projectId: string
+  tools: ToolRegistration[]
+}
+
+export interface GetConfigMessage {
+  type: 'get_config'
+  toolName?: string
+}
+
+export type SDKMessage = RunStartMessage | RunEndMessage | StepStartMessage | StepEndMessage | GuardEventMessage | RegisterToolsMessage | GetConfigMessage
 
 // ── Daemon → SDK ──────────────────────────────────────────────────────────────
 
@@ -57,15 +86,18 @@ export interface ProceedResponse { type: 'proceed' }
 export interface KillResponse    { type: 'kill';  reason: string; message: string }
 export interface PauseResponse   { type: 'pause'; reason: string; approvalId: string }
 export interface RetryResponse   { type: 'retry'; context: string }
+export interface ConfigResponse  { type: 'config'; tools: Record<string, ToolConfig> }
 
-export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse
+export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse | ConfigResponse
 
 const REQUIRED_FIELDS: Record<string, string[]> = {
-  run_start:   ['runId', 'agentId'],
-  run_end:     ['runId', 'status', 'totalCost'],
-  step_start:  ['runId', 'stepId', 'stepNumber', 'toolName', 'argsHash'],
-  step_end:    ['runId', 'stepId', 'costUsd', 'tokensIn', 'tokensOut', 'latencyMs'],
-  guard_event: ['runId', 'eventType', 'severity'],
+  run_start:       ['runId', 'agentId'],
+  run_end:         ['runId', 'status', 'totalCost'],
+  step_start:      ['runId', 'stepId', 'stepNumber', 'toolName', 'argsHash'],
+  step_end:        ['runId', 'stepId', 'costUsd', 'tokensIn', 'tokensOut', 'latencyMs'],
+  guard_event:     ['runId', 'eventType', 'severity'],
+  register_tools:  ['projectId', 'tools'],
+  get_config:      [],
 }
 
 const KNOWN_TYPES = new Set(Object.keys(REQUIRED_FIELDS))

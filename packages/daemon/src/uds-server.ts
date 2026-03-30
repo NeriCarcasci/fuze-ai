@@ -7,6 +7,7 @@ import type { PatternAnalyser } from './pattern-analyser.js'
 import type { AuditStore } from './audit-store.js'
 import type { AlertManager } from './alert-manager.js'
 import type { SDKMessage } from './protocol.js'
+import type { ConfigCache } from './config-cache.js'
 
 export interface UDSServerDeps {
   runManager: RunManager
@@ -14,6 +15,8 @@ export interface UDSServerDeps {
   patternAnalyser: PatternAnalyser
   auditStore: AuditStore
   alertManager: AlertManager
+  /** Optional — provides tool config responses to the SDK. */
+  configCache?: ConfigCache
 }
 
 interface PendingStep {
@@ -333,6 +336,30 @@ export class UDSServer {
           details: msg.details,
         })
         return null
+      }
+
+      case 'register_tools': {
+        // Populate cache with default configs for any tool not already cached.
+        // This lets local (no-cloud) users still benefit from per-tool limits
+        // that they registered at SDK boot time.
+        const { configCache } = this.deps
+        if (configCache) {
+          for (const tool of msg.tools) {
+            configCache.upsertToolConfig(msg.projectId, tool.name, {
+              maxRetries: tool.defaults?.maxRetries ?? 3,
+              maxBudget:  tool.defaults?.maxBudget ?? 1.0,
+              timeout:    tool.defaults?.timeout ?? 30000,
+              enabled:    true,
+              updatedAt:  new Date().toISOString(),
+            })
+          }
+        }
+        return null
+      }
+
+      case 'get_config': {
+        const tools = this.deps.configCache?.getAllToolConfigs() ?? {}
+        return { type: 'config', tools }
       }
 
       default:

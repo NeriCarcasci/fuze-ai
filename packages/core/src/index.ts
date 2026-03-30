@@ -6,21 +6,21 @@ import { BudgetTracker } from './budget-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
-import { createTransport } from './transports/index.js'
-import type { TelemetryTransport } from './transports/index.js'
+import { createService } from './services/index.js'
+import type { FuzeService, ToolRegistration } from './services/index.js'
 import { createGuardWrapper } from './guard.js'
 import type { GuardContext } from './guard.js'
 import { mergePricing } from './pricing.js'
 
-// Module-level transport singleton — one connection per process, lazily created.
-let _transport: TelemetryTransport | null = null
+// Module-level service singleton — one connection per process, lazily created.
+let _service: FuzeService | null = null
 
-function getOrCreateTransport(config: FuzeConfig): TelemetryTransport {
-  if (!_transport) {
-    _transport = createTransport(config)
-    void _transport.connect()
+function getOrCreateService(config: FuzeConfig): FuzeService {
+  if (!_service) {
+    _service = createService(config)
+    void _service.connect()
   }
-  return _transport
+  return _service
 }
 
 // Re-export public types
@@ -28,7 +28,14 @@ export type { GuardOptions, FuzeConfig, RunContext } from './types.js'
 export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js'
 export { extractUsageFromResult } from './pricing.js'
 export type { ExtractedUsage } from './pricing.js'
+
+// FuzeService — new bidirectional service interface
+export type { FuzeService, ToolRegistration, ToolConfig } from './services/index.js'
+export { createService, ApiService, DaemonService, NoopService } from './services/index.js'
+
+/** @deprecated Use FuzeService / createService() instead. */
 export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js'
+/** @deprecated Use FuzeService instead. */
 export type { TelemetryTransport } from './transports/index.js'
 
 // Global configuration state
@@ -75,10 +82,10 @@ export function configure(config: FuzeConfig): void {
     mergePricing(config.providers)
   }
 
-  // Reset transport so it picks up new config (cloud key, socket path, etc.)
-  if (_transport) {
-    _transport.disconnect()
-    _transport = null
+  // Reset service so it picks up new config (cloud key, socket path, etc.)
+  if (_service) {
+    _service.disconnect()
+    _service = null
   }
 }
 
@@ -115,7 +122,7 @@ export function guard<T extends (...args: unknown[]) => unknown>(
   const config = ensureConfig()
   const resolved = ConfigLoader.merge(config, options)
   const runId = randomUUID()
-  const transport = getOrCreateTransport(config)
+  const service = getOrCreateService(config)
 
   const context: GuardContext = {
     runId,
@@ -127,10 +134,10 @@ export function guard<T extends (...args: unknown[]) => unknown>(
     sideEffectRegistry: new SideEffectRegistry(),
     traceRecorder: new TraceRecorder(resolved.traceOutput),
     stepNumber: 0,
-    transport,
+    service,
   }
 
-  void transport.sendRunStart(runId, fn.name || 'anonymous', {})
+  void service.sendRunStart(runId, fn.name || 'anonymous', {})
 
   const guardFn = createGuardWrapper(resolved, context)
   return guardFn(fn, options)
@@ -163,7 +170,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
   const config = ensureConfig()
   const resolved = ConfigLoader.merge(config, options)
   const runId = randomUUID()
-  const transport = getOrCreateTransport(config)
+  const service = getOrCreateService(config)
 
   const context: GuardContext = {
     runId,
@@ -175,11 +182,11 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
     sideEffectRegistry: new SideEffectRegistry(),
     traceRecorder: new TraceRecorder(resolved.traceOutput),
     stepNumber: 0,
-    transport,
+    service,
   }
 
   context.traceRecorder.startRun(runId, agentId, resolved)
-  void transport.sendRunStart(runId, agentId, {})
+  void service.sendRunStart(runId, agentId, {})
 
   const guardFn = createGuardWrapper(resolved, context)
 
@@ -193,7 +200,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
       const { totalCost } = context.budgetTracker.getStatus()
       context.traceRecorder.endRun(runId, status, totalCost)
       await context.traceRecorder.flush()
-      await transport.sendRunEnd(runId, status, totalCost)
+      await service.sendRunEnd(runId, status, totalCost)
     },
   }
 }
@@ -204,8 +211,30 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
 export function resetConfig(): void {
   globalConfig = {}
   configLoaded = false
-  if (_transport) {
-    _transport.disconnect()
-    _transport = null
+  if (_service) {
+    _service.disconnect()
+    _service = null
   }
+}
+
+/**
+ * Register tools with Fuze API/daemon at boot time.
+ * Call once during application startup, before running any agents.
+ * If no API key or daemon is configured, this is a no-op.
+ *
+ * @example
+ * ```ts
+ * import { registerTools } from 'fuze-ai'
+ *
+ * registerTools([
+ *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, maxBudget: 0.5, timeout: 30000 } },
+ *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, maxBudget: 0.1, timeout: 10000 } },
+ * ])
+ * ```
+ */
+export function registerTools(tools: ToolRegistration[]): void {
+  const config = ensureConfig()
+  const service = getOrCreateService(config)
+  const projectId = config.project?.projectId ?? process.env['FUZE_PROJECT_ID'] ?? 'default'
+  void service.registerTools(projectId, tools)
 }

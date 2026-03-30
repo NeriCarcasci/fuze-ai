@@ -4,7 +4,7 @@ import { BudgetTracker } from './budget-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
-import type { TelemetryTransport } from './transports/index.js'
+import type { FuzeService } from './services/index.js'
 import { estimateCost, extractUsageFromResult, estimateFromArgs } from './pricing.js'
 import { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
 
@@ -18,8 +18,8 @@ export interface GuardContext {
   sideEffectRegistry: SideEffectRegistry
   traceRecorder: TraceRecorder
   stepNumber: number
-  /** Transport for telemetry — NoopTransport when no daemon/cloud configured. */
-  transport: TelemetryTransport
+  /** Service for telemetry + remote config — NoopService when no daemon/cloud configured. */
+  service: FuzeService
 }
 
 /**
@@ -69,7 +69,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           severity: 'critical',
           details: loopSignal.details,
         })
-        void context.transport.sendGuardEvent(context.runId, {
+        void context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'critical', details: loopSignal.details,
         })
         await context.traceRecorder.flush()
@@ -92,7 +92,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           severity: 'action',
           details: toolSignal.details,
         })
-        void context.transport.sendGuardEvent(context.runId, {
+        void context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'action', details: toolSignal.details,
         })
 
@@ -103,15 +103,30 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         if (opts.onLoop === 'skip') return undefined
       }
 
+      // Apply remote config overrides (synchronous cache read — zero latency)
+      let callOpts = { ...opts }
+      const remoteConfig = context.service.getToolConfig(funcName)
+      if (remoteConfig) {
+        if (!remoteConfig.enabled) {
+          throw new FuzeError(`Tool '${funcName}' is disabled via remote configuration`)
+        }
+        callOpts = {
+          ...callOpts,
+          maxCostPerStep: Math.min(callOpts.maxCostPerStep ?? Infinity, remoteConfig.maxBudget),
+          maxRetries: remoteConfig.maxRetries,
+          timeout: remoteConfig.timeout,
+        }
+      }
+
       // 2. Pre-flight budget check — use manual estimates if provided, otherwise estimate from args
       const preflightCost =
-        opts.model && (opts.estimatedTokensIn !== undefined || opts.estimatedTokensOut !== undefined)
-          ? estimateCost(opts.model, opts.estimatedTokensIn ?? 0, opts.estimatedTokensOut ?? 0)
-          : estimateFromArgs(args, opts.model)
+        callOpts.model && (callOpts.estimatedTokensIn !== undefined || callOpts.estimatedTokensOut !== undefined)
+          ? estimateCost(callOpts.model, callOpts.estimatedTokensIn ?? 0, callOpts.estimatedTokensOut ?? 0)
+          : estimateFromArgs(args, callOpts.model)
       context.budgetTracker.checkBudget(preflightCost, funcName)
 
-      // 2b. Check transport (org-level budget, kill switch). Falls back to proceed in <50ms if unavailable.
-      const decision = await context.transport.sendStepStart(context.runId, {
+      // 2b. Check service (org-level budget, kill switch). Falls back to proceed if unavailable.
+      const decision = await context.service.sendStepStart(context.runId, {
         stepId,
         stepNumber: context.stepNumber,
         toolName: funcName,
@@ -127,12 +142,12 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
       let error: string | undefined
 
       try {
-        if (opts.timeout < Infinity) {
+        if (callOpts.timeout < Infinity) {
           let timer: ReturnType<typeof setTimeout>
           result = await Promise.race([
             Promise.resolve(fn.apply(this, args)).finally(() => clearTimeout(timer)),
             new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new GuardTimeout(funcName, opts.timeout)), opts.timeout)
+              timer = setTimeout(() => reject(new GuardTimeout(funcName, callOpts.timeout)), callOpts.timeout)
             }),
           ])
         } else {
@@ -147,7 +162,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         const latencyMs = Date.now() - startMs
 
         const extracted = result !== undefined
-          ? (opts.costExtractor ? opts.costExtractor(result) : extractUsageFromResult(result))
+          ? (callOpts.costExtractor ? callOpts.costExtractor(result) : extractUsageFromResult(result))
           : null
 
         let actualCost: number
@@ -155,7 +170,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         let actualTokensOut: number
 
         if (extracted) {
-          const modelForPricing = (extracted as { model?: string }).model ?? opts.model
+          const modelForPricing = (extracted as { model?: string }).model ?? callOpts.model
           actualCost = modelForPricing
             ? estimateCost(modelForPricing, extracted.tokensIn, extracted.tokensOut)
             : preflightCost
@@ -163,8 +178,8 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           actualTokensOut = extracted.tokensOut
         } else {
           actualCost = preflightCost
-          actualTokensIn = opts.estimatedTokensIn ?? 0
-          actualTokensOut = opts.estimatedTokensOut ?? 0
+          actualTokensIn = callOpts.estimatedTokensIn ?? 0
+          actualTokensOut = callOpts.estimatedTokensOut ?? 0
         }
 
         context.traceRecorder.recordStep({
@@ -186,7 +201,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         context.budgetTracker.recordCost(actualCost, actualTokensIn, actualTokensOut)
 
         // Notify transport of step completion (fire-and-forget)
-        void context.transport.sendStepEnd(context.runId, stepId, {
+        void context.service.sendStepEnd(context.runId, stepId, {
           costUsd: actualCost,
           tokensIn: actualTokensIn,
           tokensOut: actualTokensOut,
@@ -208,7 +223,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           severity: 'warning',
           details: progressSignal.details,
         })
-        void context.transport.sendGuardEvent(context.runId, {
+        void context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'warning', details: progressSignal.details,
         })
 

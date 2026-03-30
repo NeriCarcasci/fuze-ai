@@ -41,7 +41,7 @@ export function createGuardWrapper(resolvedOpts, context) {
                     severity: 'critical',
                     details: loopSignal.details,
                 });
-                void context.transport.sendGuardEvent(context.runId, {
+                void context.service.sendGuardEvent(context.runId, {
                     stepId, eventType: 'loop_detected', severity: 'critical', details: loopSignal.details,
                 });
                 await context.traceRecorder.flush();
@@ -64,7 +64,7 @@ export function createGuardWrapper(resolvedOpts, context) {
                     severity: 'action',
                     details: toolSignal.details,
                 });
-                void context.transport.sendGuardEvent(context.runId, {
+                void context.service.sendGuardEvent(context.runId, {
                     stepId, eventType: 'loop_detected', severity: 'action', details: toolSignal.details,
                 });
                 if (opts.onLoop === 'kill') {
@@ -74,13 +74,27 @@ export function createGuardWrapper(resolvedOpts, context) {
                 if (opts.onLoop === 'skip')
                     return undefined;
             }
+            // Apply remote config overrides (synchronous cache read — zero latency)
+            let callOpts = { ...opts };
+            const remoteConfig = context.service.getToolConfig(funcName);
+            if (remoteConfig) {
+                if (!remoteConfig.enabled) {
+                    throw new FuzeError(`Tool '${funcName}' is disabled via remote configuration`);
+                }
+                callOpts = {
+                    ...callOpts,
+                    maxCostPerStep: Math.min(callOpts.maxCostPerStep ?? Infinity, remoteConfig.maxBudget),
+                    maxRetries: remoteConfig.maxRetries,
+                    timeout: remoteConfig.timeout,
+                };
+            }
             // 2. Pre-flight budget check — use manual estimates if provided, otherwise estimate from args
-            const preflightCost = opts.model && (opts.estimatedTokensIn !== undefined || opts.estimatedTokensOut !== undefined)
-                ? estimateCost(opts.model, opts.estimatedTokensIn ?? 0, opts.estimatedTokensOut ?? 0)
-                : estimateFromArgs(args, opts.model);
+            const preflightCost = callOpts.model && (callOpts.estimatedTokensIn !== undefined || callOpts.estimatedTokensOut !== undefined)
+                ? estimateCost(callOpts.model, callOpts.estimatedTokensIn ?? 0, callOpts.estimatedTokensOut ?? 0)
+                : estimateFromArgs(args, callOpts.model);
             context.budgetTracker.checkBudget(preflightCost, funcName);
-            // 2b. Check transport (org-level budget, kill switch). Falls back to proceed in <50ms if unavailable.
-            const decision = await context.transport.sendStepStart(context.runId, {
+            // 2b. Check service (org-level budget, kill switch). Falls back to proceed if unavailable.
+            const decision = await context.service.sendStepStart(context.runId, {
                 stepId,
                 stepNumber: context.stepNumber,
                 toolName: funcName,
@@ -94,12 +108,12 @@ export function createGuardWrapper(resolvedOpts, context) {
             let result;
             let error;
             try {
-                if (opts.timeout < Infinity) {
+                if (callOpts.timeout < Infinity) {
                     let timer;
                     result = await Promise.race([
                         Promise.resolve(fn.apply(this, args)).finally(() => clearTimeout(timer)),
                         new Promise((_, reject) => {
-                            timer = setTimeout(() => reject(new GuardTimeout(funcName, opts.timeout)), opts.timeout);
+                            timer = setTimeout(() => reject(new GuardTimeout(funcName, callOpts.timeout)), callOpts.timeout);
                         }),
                     ]);
                 }
@@ -116,13 +130,13 @@ export function createGuardWrapper(resolvedOpts, context) {
                 const endedAt = new Date().toISOString();
                 const latencyMs = Date.now() - startMs;
                 const extracted = result !== undefined
-                    ? (opts.costExtractor ? opts.costExtractor(result) : extractUsageFromResult(result))
+                    ? (callOpts.costExtractor ? callOpts.costExtractor(result) : extractUsageFromResult(result))
                     : null;
                 let actualCost;
                 let actualTokensIn;
                 let actualTokensOut;
                 if (extracted) {
-                    const modelForPricing = extracted.model ?? opts.model;
+                    const modelForPricing = extracted.model ?? callOpts.model;
                     actualCost = modelForPricing
                         ? estimateCost(modelForPricing, extracted.tokensIn, extracted.tokensOut)
                         : preflightCost;
@@ -131,8 +145,8 @@ export function createGuardWrapper(resolvedOpts, context) {
                 }
                 else {
                     actualCost = preflightCost;
-                    actualTokensIn = opts.estimatedTokensIn ?? 0;
-                    actualTokensOut = opts.estimatedTokensOut ?? 0;
+                    actualTokensIn = callOpts.estimatedTokensIn ?? 0;
+                    actualTokensOut = callOpts.estimatedTokensOut ?? 0;
                 }
                 context.traceRecorder.recordStep({
                     stepId,
@@ -151,7 +165,7 @@ export function createGuardWrapper(resolvedOpts, context) {
                 });
                 context.budgetTracker.recordCost(actualCost, actualTokensIn, actualTokensOut);
                 // Notify transport of step completion (fire-and-forget)
-                void context.transport.sendStepEnd(context.runId, stepId, {
+                void context.service.sendStepEnd(context.runId, stepId, {
                     costUsd: actualCost,
                     tokensIn: actualTokensIn,
                     tokensOut: actualTokensOut,
@@ -172,7 +186,7 @@ export function createGuardWrapper(resolvedOpts, context) {
                     severity: 'warning',
                     details: progressSignal.details,
                 });
-                void context.transport.sendGuardEvent(context.runId, {
+                void context.service.sendGuardEvent(context.runId, {
                     stepId, eventType: 'loop_detected', severity: 'warning', details: progressSignal.details,
                 });
                 if (opts.onLoop === 'kill') {

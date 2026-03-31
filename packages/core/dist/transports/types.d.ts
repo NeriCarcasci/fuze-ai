@@ -12,6 +12,10 @@ export interface StepCheckData {
  * Metadata sent after a step completes.
  */
 export interface StepEndData {
+    toolName: string;
+    stepNumber: number;
+    argsHash: string;
+    hasSideEffect: boolean;
     costUsd: number;
     tokensIn: number;
     tokensOut: number;

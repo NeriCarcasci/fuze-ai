@@ -202,6 +202,10 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
 
         // Notify transport of step completion (fire-and-forget)
         void context.service.sendStepEnd(context.runId, stepId, {
+          toolName: funcName,
+          stepNumber: context.stepNumber,
+          argsHash,
+          hasSideEffect: opts.sideEffect,
           costUsd: actualCost,
           tokensIn: actualTokensIn,
           tokensOut: actualTokensOut,

@@ -1,6 +1,8 @@
 import * as net from 'node:net';
 import * as fs from 'node:fs';
 import { parseMessage, serialiseResponse, PROCEED } from './protocol.js';
+const MAX_BUFFER_BYTES = 1_048_576;
+const DISPATCH_TIMEOUT_MS = 30_000;
 /**
  * Unix Domain Socket server for SDK ↔ Daemon communication.
  *
@@ -62,6 +64,11 @@ export class UDSServer {
         let buf = '';
         socket.on('data', (chunk) => {
             buf += chunk.toString('utf8');
+            if (Buffer.byteLength(buf, 'utf8') > MAX_BUFFER_BYTES) {
+                process.stderr.write('[fuze-daemon] Warning: closing socket due to oversized UDS message buffer (>1MB)\n');
+                socket.destroy();
+                return;
+            }
             const lines = buf.split('\n');
             buf = lines.pop() ?? ''; // keep partial last line
             for (const line of lines) {
@@ -94,7 +101,7 @@ export class UDSServer {
             return;
         }
         // Dispatch and write response (async, fire-and-forget; errors caught internally)
-        this._dispatch(msg).then((response) => {
+        this._dispatchWithTimeout(msg).then((response) => {
             if (response !== null) {
                 try {
                     socket.write(serialiseResponse(response));
@@ -111,6 +118,25 @@ export class UDSServer {
                 details: { msgType: msg.type },
             });
         });
+    }
+    async _dispatchWithTimeout(msg) {
+        let timeout;
+        const timeoutPromise = new Promise((resolve) => {
+            timeout = setTimeout(() => {
+                resolve({ type: 'error', message: 'dispatch_timeout' });
+            }, DISPATCH_TIMEOUT_MS);
+        });
+        const response = await Promise.race([
+            this._dispatch(msg),
+            timeoutPromise,
+        ]);
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+        if (response !== null && response.type === 'error' && response.message === 'dispatch_timeout') {
+            process.stderr.write(`[fuze-daemon] Warning: dispatch timed out after ${DISPATCH_TIMEOUT_MS}ms for message type '${msg.type}'\n`);
+        }
+        return response;
     }
     async _dispatch(msg) {
         const { runManager, budgetEnforcer, patternAnalyser, auditStore, alertManager } = this.deps;
@@ -148,7 +174,7 @@ export class UDSServer {
                 const run = runManager.getRun(msg.runId);
                 if (run) {
                     const lastFailedStep = [...run.steps].reverse().find((s) => s.toolName);
-                    patternAnalyser.recordRunOutcome(run.agentId, msg.status, lastFailedStep?.toolName, msg.status !== 'completed' ? lastFailedStep?.toolName : undefined, msg.totalCost);
+                    patternAnalyser.recordRunOutcome(run.agentId, msg.status, lastFailedStep?.stepId, msg.status !== 'completed' ? lastFailedStep?.toolName : undefined, msg.totalCost);
                     const alerts = patternAnalyser.analyse();
                     for (const alert of alerts) {
                         alertManager.emit({
@@ -178,12 +204,17 @@ export class UDSServer {
                     return { type: 'kill', reason: decision.reason, message: decision.reason };
                 }
                 // Buffer step metadata for later use in step_end
+                const idempotencyKey = this.deps.idempotencyManager?.generateKey(msg.runId, msg.toolName, msg.argsHash);
+                if (idempotencyKey && await this.deps.idempotencyManager?.check(idempotencyKey)) {
+                    return { type: 'retry', context: 'duplicate_step' };
+                }
                 this.pendingSteps.set(msg.stepId, {
                     stepNumber: msg.stepNumber,
                     toolName: msg.toolName,
                     argsHash: msg.argsHash,
                     sideEffect: msg.sideEffect,
                     startedAt: new Date().toISOString(),
+                    idempotencyKey,
                 });
                 return PROCEED;
             }
@@ -213,6 +244,15 @@ export class UDSServer {
                         sideEffect: pending.sideEffect,
                         startedAt: pending.startedAt,
                         costUsd: msg.costUsd,
+                    });
+                }
+                if (pending?.idempotencyKey) {
+                    await this.deps.idempotencyManager?.recordExecution(pending.idempotencyKey, msg.runId, msg.stepId, pending.toolName, pending.argsHash, {
+                        costUsd: msg.costUsd,
+                        tokensIn: msg.tokensIn,
+                        tokensOut: msg.tokensOut,
+                        latencyMs: msg.latencyMs,
+                        error: msg.error ?? null,
                     });
                 }
                 // Persist step to audit store
@@ -277,6 +317,28 @@ export class UDSServer {
                     details: msg.details,
                 });
                 return null;
+            }
+            case 'register_tools': {
+                // Populate cache with default configs for any tool not already cached.
+                // This lets local (no-cloud) users still benefit from per-tool limits
+                // that they registered at SDK boot time.
+                const { configCache } = this.deps;
+                if (configCache) {
+                    for (const tool of msg.tools) {
+                        configCache.upsertToolConfig(msg.projectId, tool.name, {
+                            maxRetries: tool.defaults?.maxRetries ?? 3,
+                            maxBudget: tool.defaults?.maxBudget ?? 1.0,
+                            timeout: tool.defaults?.timeout ?? 30000,
+                            enabled: true,
+                            updatedAt: new Date().toISOString(),
+                        });
+                    }
+                }
+                return null;
+            }
+            case 'get_config': {
+                const tools = this.deps.configCache?.getAllToolConfigs() ?? {};
+                return { type: 'config', tools };
             }
             default:
                 return null;

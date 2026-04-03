@@ -39,7 +39,7 @@ export class DaemonService {
         }
         return this._connected;
     }
-    disconnect() {
+    async disconnect() {
         this._closed = true;
         if (this._reconnectTimer)
             clearTimeout(this._reconnectTimer);
@@ -50,6 +50,7 @@ export class DaemonService {
         this._connected = false;
     }
     isConnected() { return this._connected; }
+    async flush() { }
     // ── Configuration ──────────────────────────────────────────────────────────
     async registerTools(projectId, tools) {
         this._send({ type: 'register_tools', projectId, tools });
@@ -126,8 +127,8 @@ export class DaemonService {
             details: event.details,
         });
     }
-    async sendRunEnd(runId, status, totalCost) {
-        this._send({ type: 'run_end', runId, status, totalCost });
+    async sendRunEnd(runId, status) {
+        this._send({ type: 'run_end', runId, status });
     }
     // ── Private ────────────────────────────────────────────────────────────────
     _connect() {
@@ -192,6 +193,12 @@ export class DaemonService {
             }
         }
         catch {
+            if (this._pendingConfig) {
+                const { resolve, timer } = this._pendingConfig;
+                this._pendingConfig = null;
+                clearTimeout(timer);
+                resolve({});
+            }
             this._resolvePendingStepWithProceed();
         }
     }
@@ -206,10 +213,11 @@ export class DaemonService {
     _scheduleReconnect() {
         if (this._closed)
             return;
+        const delay = this._reconnectMs;
+        this._reconnectMs = Math.min(this._reconnectMs * 2, RECONNECT_MAX_MS);
         this._reconnectTimer = setTimeout(() => {
-            this._reconnectMs = Math.min(this._reconnectMs * 2, RECONNECT_MAX_MS);
             this._connect();
-        }, this._reconnectMs);
+        }, delay);
     }
 }
 //# sourceMappingURL=daemon-service.js.map

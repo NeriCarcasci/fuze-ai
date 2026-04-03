@@ -7,8 +7,9 @@ import type { FuzeService, ToolRegistration, ToolConfig, StepCheckData, StepEndD
  */
 export class NoopService implements FuzeService {
   async connect(): Promise<boolean> { return true }
-  disconnect(): void {}
+  async disconnect(): Promise<void> {}
   isConnected(): boolean { return true }
+  async flush(): Promise<void> {}
 
   async registerTools(_projectId: string, _tools: ToolRegistration[]): Promise<void> {}
   getToolConfig(_toolName: string): ToolConfig | null { return null }
@@ -20,5 +21,5 @@ export class NoopService implements FuzeService {
   }
   async sendStepEnd(_runId: string, _stepId: string, _data: StepEndData): Promise<void> {}
   async sendGuardEvent(_runId: string, _event: GuardEventData): Promise<void> {}
-  async sendRunEnd(_runId: string, _status: string, _totalCost: number): Promise<void> {}
+  async sendRunEnd(_runId: string, _status: string): Promise<void> {}
 }

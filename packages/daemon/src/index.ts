@@ -1,23 +1,14 @@
 #!/usr/bin/env node
 /**
- * @fuze-ai/daemon — CLI entry point.
+ * @fuze-ai/daemon - CLI entry point.
  *
  * Subcommands:
- *   fuze-ai daemon  [--config <path>]                   Start the runtime daemon
+ *   fuze-ai daemon  [--config <path>]                     Start the runtime daemon
  *   fuze-ai proxy   [options] -- <server-cmd> [args...]  Start the MCP proxy
  */
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-
-const subcommand = process.argv[2]
-
-if (subcommand === 'proxy') {
-  const { runProxy } = await import('./proxy/index.js')
-  await runProxy(process.argv.slice(3))
-  process.exit(0)
-}
-
-// Default: daemon subcommand
+import { pathToFileURL } from 'node:url'
 import { loadDaemonConfig } from './config.js'
 import { AuditStore } from './audit-store.js'
 import { BudgetEnforcer } from './budget-enforcer.js'
@@ -28,12 +19,24 @@ import { UDSServer } from './uds-server.js'
 import { APIServer } from './api-server.js'
 import { ConfigCache } from './config-cache.js'
 import { ApiSync } from './api-sync.js'
+import { CompensationEngine } from './compensation/compensation-engine.js'
+import { IdempotencyManager } from './compensation/idempotency.js'
 
 const DEFAULT_CLOUD_ENDPOINT = 'https://api.fuze-ai.tech'
 
-async function main(): Promise<void> {
+function isExecutedDirectly(): boolean {
+  const entry = process.argv[1]
+  if (!entry) return false
+  return import.meta.url === pathToFileURL(entry).href
+}
+
+async function runProxyCommand(args: string[]): Promise<void> {
+  const { runProxy } = await import('./proxy/index.js')
+  await runProxy(args)
+}
+
+export async function startDaemon(args: string[]): Promise<void> {
   // Parse --config flag
-  const args = process.argv.slice(2)
   const configIdx = args.indexOf('--config')
   const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined
 
@@ -47,13 +50,19 @@ async function main(): Promise<void> {
 
   // Build services
   const auditStore = new AuditStore(config.storagePath)
-  await auditStore.init()
+  try {
+    await auditStore.init()
+  } catch (err) {
+    process.stderr.write(`[fuze-daemon] Failed to initialize audit store: ${(err as Error).message}\n`)
+    process.exit(1)
+    return
+  }
 
-  // Config cache — always created (cheap, uses same SQLite file as audit store)
+  // Config cache - always created (cheap, uses same SQLite file as audit store)
   const configCache = new ConfigCache(config.storagePath)
   configCache.init()
 
-  // Cloud API sync — only active when FUZE_API_KEY is set
+  // Cloud API sync - only active when FUZE_API_KEY is set
   let apiSync: ApiSync | null = null
   const apiKey = process.env['FUZE_API_KEY']
   if (apiKey) {
@@ -68,6 +77,8 @@ async function main(): Promise<void> {
   const patternAnalyser = new PatternAnalyser()
   const runManager = new RunManager()
   const alertManager = new AlertManager(config.alerts)
+  const compensationEngine = new CompensationEngine(auditStore, alertManager)
+  const idempotencyManager = new IdempotencyManager(auditStore)
 
   const udsServer = new UDSServer(config.socketPath, {
     runManager,
@@ -76,6 +87,7 @@ async function main(): Promise<void> {
     auditStore,
     alertManager,
     configCache,
+    idempotencyManager,
   })
 
   const apiServer = new APIServer(config.apiPort, {
@@ -85,6 +97,7 @@ async function main(): Promise<void> {
     auditStore,
     alertManager,
     udsServer,
+    compensationEngine,
   })
 
   // Broadcast SDK run/step lifecycle events to dashboard WebSocket clients
@@ -143,7 +156,21 @@ async function main(): Promise<void> {
   ).unref()
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`[fuze-daemon] Fatal: ${(err as Error).message}\n`)
-  process.exit(1)
-})
+export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const subcommand = argv[0]
+  if (subcommand === 'proxy') {
+    await runProxyCommand(argv.slice(1))
+    process.exit(0)
+    return
+  }
+
+  const daemonArgs = subcommand === 'daemon' ? argv.slice(1) : argv
+  await startDaemon(daemonArgs)
+}
+
+if (isExecutedDirectly()) {
+  runCli().catch((err: unknown) => {
+    process.stderr.write(`[fuze-daemon] Fatal: ${(err as Error).message}\n`)
+    process.exit(1)
+  })
+}

@@ -11,7 +11,8 @@ export interface AlertInput {
  */
 export declare class AlertManager {
     private readonly config;
-    /** key → timestamp of last emission */
+    private static readonly WEBHOOK_TIMEOUT_MS;
+    /** key -> timestamp of last emission */
     private readonly recentKeys;
     private readonly history;
     constructor(config?: AlertConfig);

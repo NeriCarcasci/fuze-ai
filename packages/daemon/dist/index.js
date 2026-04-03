@@ -1,20 +1,14 @@
 #!/usr/bin/env node
 /**
- * @fuze-ai/daemon — CLI entry point.
+ * @fuze-ai/daemon - CLI entry point.
  *
  * Subcommands:
- *   fuze-ai daemon  [--config <path>]                   Start the runtime daemon
+ *   fuze-ai daemon  [--config <path>]                     Start the runtime daemon
  *   fuze-ai proxy   [options] -- <server-cmd> [args...]  Start the MCP proxy
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-const subcommand = process.argv[2];
-if (subcommand === 'proxy') {
-    const { runProxy } = await import('./proxy/index.js');
-    await runProxy(process.argv.slice(3));
-    process.exit(0);
-}
-// Default: daemon subcommand
+import { pathToFileURL } from 'node:url';
 import { loadDaemonConfig } from './config.js';
 import { AuditStore } from './audit-store.js';
 import { BudgetEnforcer } from './budget-enforcer.js';
@@ -23,9 +17,23 @@ import { RunManager } from './run-manager.js';
 import { AlertManager } from './alert-manager.js';
 import { UDSServer } from './uds-server.js';
 import { APIServer } from './api-server.js';
-async function main() {
+import { ConfigCache } from './config-cache.js';
+import { ApiSync } from './api-sync.js';
+import { CompensationEngine } from './compensation/compensation-engine.js';
+import { IdempotencyManager } from './compensation/idempotency.js';
+const DEFAULT_CLOUD_ENDPOINT = 'https://api.fuze-ai.tech';
+function isExecutedDirectly() {
+    const entry = process.argv[1];
+    if (!entry)
+        return false;
+    return import.meta.url === pathToFileURL(entry).href;
+}
+async function runProxyCommand(args) {
+    const { runProxy } = await import('./proxy/index.js');
+    await runProxy(args);
+}
+export async function startDaemon(args) {
     // Parse --config flag
-    const args = process.argv.slice(2);
     const configIdx = args.indexOf('--config');
     const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined;
     const config = loadDaemonConfig(configPath);
@@ -36,17 +44,41 @@ async function main() {
     }
     // Build services
     const auditStore = new AuditStore(config.storagePath);
-    await auditStore.init();
+    try {
+        await auditStore.init();
+    }
+    catch (err) {
+        process.stderr.write(`[fuze-daemon] Failed to initialize audit store: ${err.message}\n`);
+        process.exit(1);
+        return;
+    }
+    // Config cache - always created (cheap, uses same SQLite file as audit store)
+    const configCache = new ConfigCache(config.storagePath);
+    configCache.init();
+    // Cloud API sync - only active when FUZE_API_KEY is set
+    let apiSync = null;
+    const apiKey = process.env['FUZE_API_KEY'];
+    if (apiKey) {
+        const projectId = process.env['FUZE_PROJECT_ID'] ?? 'default';
+        const endpoint = process.env['FUZE_API_ENDPOINT'] ?? DEFAULT_CLOUD_ENDPOINT;
+        apiSync = new ApiSync(apiKey, endpoint, configCache, projectId);
+        apiSync.start();
+        process.stderr.write(`[fuze-daemon] Cloud sync active (project: ${projectId})\n`);
+    }
     const budgetEnforcer = new BudgetEnforcer(config.budget);
     const patternAnalyser = new PatternAnalyser();
     const runManager = new RunManager();
     const alertManager = new AlertManager(config.alerts);
+    const compensationEngine = new CompensationEngine(auditStore, alertManager);
+    const idempotencyManager = new IdempotencyManager(auditStore);
     const udsServer = new UDSServer(config.socketPath, {
         runManager,
         budgetEnforcer,
         patternAnalyser,
         auditStore,
         alertManager,
+        configCache,
+        idempotencyManager,
     });
     const apiServer = new APIServer(config.apiPort, {
         runManager,
@@ -55,6 +87,7 @@ async function main() {
         auditStore,
         alertManager,
         udsServer,
+        compensationEngine,
     });
     // Broadcast SDK run/step lifecycle events to dashboard WebSocket clients
     udsServer.onEvent = (type, data) => {
@@ -74,9 +107,11 @@ async function main() {
     const shutdown = async (signal) => {
         process.stderr.write(`\n[fuze-daemon] Received ${signal}, shutting down...\n`);
         try {
+            apiSync?.stop();
             await udsServer.stop();
             await apiServer.stop();
             await auditStore.close();
+            configCache.close();
         }
         catch (err) {
             process.stderr.write(`[fuze-daemon] Shutdown error: ${err.message}\n`);
@@ -96,8 +131,20 @@ async function main() {
         });
     }, 60 * 60 * 1000).unref();
 }
-main().catch((err) => {
-    process.stderr.write(`[fuze-daemon] Fatal: ${err.message}\n`);
-    process.exit(1);
-});
+export async function runCli(argv = process.argv.slice(2)) {
+    const subcommand = argv[0];
+    if (subcommand === 'proxy') {
+        await runProxyCommand(argv.slice(1));
+        process.exit(0);
+        return;
+    }
+    const daemonArgs = subcommand === 'daemon' ? argv.slice(1) : argv;
+    await startDaemon(daemonArgs);
+}
+if (isExecutedDirectly()) {
+    runCli().catch((err) => {
+        process.stderr.write(`[fuze-daemon] Fatal: ${err.message}\n`);
+        process.exit(1);
+    });
+}
 //# sourceMappingURL=index.js.map

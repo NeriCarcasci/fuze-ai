@@ -1,7 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { extractUsageFromResult, estimateFromArgs, estimateCost, resetPricing } from '../src/pricing.js'
-
-afterEach(() => resetPricing())
+import { describe, it, expect } from 'vitest'
+import { extractUsageFromResult } from '../src/pricing.js'
 
 describe('extractUsageFromResult()', () => {
   it('returns null for null', () => {
@@ -121,29 +119,3 @@ describe('extractUsageFromResult()', () => {
   })
 })
 
-describe('estimateFromArgs()', () => {
-  it('returns a positive number for non-empty args', () => {
-    const cost = estimateFromArgs(['hello world'])
-    expect(cost).toBeGreaterThan(0)
-  })
-
-  it('uses model pricing when model is known', () => {
-    const noModel = estimateFromArgs(['hello world'])
-    const withModel = estimateFromArgs(['hello world'], 'openai/gpt-4o')
-    // gpt-4o pricing should differ from the flat rate
-    expect(withModel).not.toBe(noModel)
-  })
-
-  it('returns flat rate when model is unknown', () => {
-    const cost = estimateFromArgs(['hello'], 'unknown/model-xyz')
-    // Falls back to flat rate: (tokensIn + tokensOut) * 0.00001
-    const argsTokens = Math.ceil(JSON.stringify(['hello']).length / 4)
-    const expected = (argsTokens + Math.ceil(argsTokens * 0.5)) * 0.00001
-    expect(cost).toBeCloseTo(expected, 6)
-  })
-
-  it('handles empty args without throwing', () => {
-    expect(() => estimateFromArgs([])).not.toThrow()
-    expect(estimateFromArgs([])).toBeGreaterThan(0)
-  })
-})

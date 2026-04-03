@@ -1,3 +1,5 @@
 node_modules/
 
 examples\local-setup.sh
+.fuze/audit.key
+audit.key

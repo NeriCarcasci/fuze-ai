@@ -1,59 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-let priceRegistry = null;
-/**
- * Loads the built-in provider pricing data from disk.
- * @returns The pricing registry keyed by model identifier.
- */
-function loadPricing() {
-    if (priceRegistry)
-        return priceRegistry;
-    const pricingPath = join(__dirname, '..', 'data', 'provider-pricing.json');
-    const raw = readFileSync(pricingPath, 'utf-8');
-    priceRegistry = JSON.parse(raw);
-    return priceRegistry;
-}
-/**
- * Merges user-provided pricing overrides into the registry.
- * @param overrides - Map of model identifiers to price objects.
- */
-export function mergePricing(overrides) {
-    const registry = loadPricing();
-    for (const [model, price] of Object.entries(overrides)) {
-        registry[model] = price;
-    }
-}
-/**
- * Looks up the per-token price for a model.
- * @param model - Model identifier (e.g., 'openai/gpt-4o').
- * @returns The input/output price per token, or null if unknown.
- */
-export function getModelPrice(model) {
-    const registry = loadPricing();
-    return registry[model] ?? null;
-}
-/**
- * Estimates the cost of a model call given token counts.
- * @param model - Model identifier.
- * @param tokensIn - Number of input tokens.
- * @param tokensOut - Number of output tokens.
- * @returns Estimated cost in USD. Returns 0 if model is unknown.
- */
-export function estimateCost(model, tokensIn, tokensOut) {
-    const price = getModelPrice(model);
-    if (!price)
-        return 0;
-    return price.input * tokensIn + price.output * tokensOut;
-}
-/**
- * Resets the pricing registry (used in testing).
- */
-export function resetPricing() {
-    priceRegistry = null;
-}
+// Usage extraction — reads token counts from known LLM response shapes.
+// No USD/pricing logic. Token counts are tracked as pure telemetry.
 /**
  * Inspects a return value and extracts token usage from known LLM response shapes.
  *
@@ -139,33 +85,5 @@ export function extractUsageFromResult(result) {
         };
     }
     return null;
-}
-/**
- * Estimates cost from serialised args size when no explicit token counts are given.
- *
- * Uses a 4-chars-per-token heuristic for input, 50% of input for output.
- * Falls back to a conservative $0.00001/token flat rate if the model is unknown.
- *
- * @param args - Function arguments to estimate from.
- * @param model - Model identifier (optional). Used for pricing lookup.
- * @returns Estimated cost in USD.
- */
-export function estimateFromArgs(args, model) {
-    let argsStr;
-    try {
-        argsStr = JSON.stringify(args);
-    }
-    catch {
-        argsStr = String(args);
-    }
-    const estimatedInputTokens = Math.ceil(argsStr.length / 4);
-    const estimatedOutputTokens = Math.ceil(estimatedInputTokens * 0.5);
-    if (model) {
-        const cost = estimateCost(model, estimatedInputTokens, estimatedOutputTokens);
-        if (cost > 0)
-            return cost;
-    }
-    // No model or unknown model — conservative flat rate
-    return (estimatedInputTokens + estimatedOutputTokens) * 0.00001;
 }
 //# sourceMappingURL=pricing.js.map

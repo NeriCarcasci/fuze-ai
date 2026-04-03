@@ -9,6 +9,14 @@ export class RunManager {
   private readonly runs = new Map<string, RunState>()
   private readonly endedRuns = new Map<string, RunState>()
 
+  private trimEndedRuns(): void {
+    if (this.endedRuns.size <= RunManager.MAX_ENDED) return
+    const oldest = this.endedRuns.keys().next()
+    if (!oldest.done) {
+      this.endedRuns.delete(oldest.value)
+    }
+  }
+
   /**
    * Register a new run.
    *
@@ -80,10 +88,7 @@ export class RunManager {
     run.totalCost = totalCost
     this.runs.delete(runId)
     this.endedRuns.set(runId, run)
-    if (this.endedRuns.size > RunManager.MAX_ENDED) {
-      const oldest = this.endedRuns.keys().next().value!
-      this.endedRuns.delete(oldest)
-    }
+    this.trimEndedRuns()
   }
 
   /**
@@ -99,10 +104,7 @@ export class RunManager {
     run.killReason = reason
     this.runs.delete(runId)
     this.endedRuns.set(runId, run)
-    if (this.endedRuns.size > RunManager.MAX_ENDED) {
-      const oldest = this.endedRuns.keys().next().value!
-      this.endedRuns.delete(oldest)
-    }
+    this.trimEndedRuns()
   }
 
   /**

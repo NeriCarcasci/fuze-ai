@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { ConfigLoader } from '../src/config-loader.js'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -26,7 +26,6 @@ describe('ConfigLoader', () => {
 [defaults]
 maxRetries = 5
 timeout = 60000
-maxCostPerRun = 20.0
 onLoop = "warn"
 `,
       'utf-8',
@@ -36,7 +35,6 @@ onLoop = "warn"
 
     expect(config.defaults?.maxRetries).toBe(5)
     expect(config.defaults?.timeout).toBe(60000)
-    expect(config.defaults?.maxCostPerRun).toBe(20.0)
     expect(config.defaults?.onLoop).toBe('warn')
   })
 
@@ -67,12 +65,10 @@ onLoop = "warn"
     const resolved = ConfigLoader.merge(projectConfig, {
       maxRetries: 1,
       timeout: 5000,
-      maxCost: 0.50,
     })
 
     expect(resolved.maxRetries).toBe(1)
     expect(resolved.timeout).toBe(5000)
-    expect(resolved.maxCostPerStep).toBe(0.50)
   })
 
   it('throws clear error with file path for invalid TOML', () => {
@@ -96,4 +92,31 @@ onLoop = "warn"
     // Defaults for unset values
     expect(resolved.loopDetection.maxFlatSteps).toBe(4)
   })
+
+  it('throws for malformed numeric values instead of silently ignoring them', () => {
+    writeFileSync(
+      TEST_TOML_PATH,
+      `
+[defaults]
+timeout = "fast"
+`,
+      'utf-8',
+    )
+
+    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow("defaults.timeout")
+  })
+
+  it('throws for invalid defaults.onLoop values', () => {
+    writeFileSync(
+      TEST_TOML_PATH,
+      `
+[defaults]
+onLoop = "halt"
+`,
+      'utf-8',
+    )
+
+    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow("defaults.onLoop")
+  })
+
 })

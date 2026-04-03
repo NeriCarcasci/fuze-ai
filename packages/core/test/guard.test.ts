@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { guard, createRun, configure, resetConfig } from '../src/index.js'
-import { LoopDetected, BudgetExceeded, GuardTimeout } from '../src/errors.js'
+import { LoopDetected, GuardTimeout } from '../src/errors.js'
 import { unlinkSync, existsSync, readFileSync } from 'node:fs'
 
 const TRACE_FILE = './fuze-traces.jsonl'
@@ -47,6 +47,77 @@ describe('guard()', () => {
     await expect(slow()).rejects.toThrow(GuardTimeout)
   })
 
+  it('clears timeout timer on normal completion and leaves no pending timers', async () => {
+    vi.useFakeTimers()
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
+    try {
+      const run = createRun('timer-clean', { timeout: 5000 })
+      const fast = run.guard(async function fast() {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return 'done'
+      })
+
+      const execution = fast()
+      await vi.advanceTimersByTimeAsync(10)
+
+      await expect(execution).resolves.toBe('done')
+      expect(clearTimeoutSpy).toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      clearTimeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('throws GuardTimeout with timeoutMs and function name in message', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = createRun('timeout-test', { timeout: 100 })
+      const slow = run.guard(async function slowWorker() {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return 'never'
+      })
+
+      const execution = slow()
+      const captured = execution.catch((err) => err)
+      await vi.advanceTimersByTimeAsync(100)
+
+      const caught = await captured
+
+      expect(caught).toBeInstanceOf(GuardTimeout)
+      const timeoutError = caught as GuardTimeout
+      expect(timeoutError.timeoutMs).toBe(100)
+      expect(timeoutError.message).toContain('slowWorker')
+
+      await vi.runAllTimersAsync()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries retryable errors and succeeds on the second attempt', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = createRun('retry-success', { maxRetries: 2 })
+      let attempts = 0
+      const flaky = run.guard(async function flaky() {
+        attempts += 1
+        if (attempts === 1) {
+          throw new Error('transient failure')
+        }
+        return 'ok'
+      })
+
+      const execution = flaky()
+      await vi.advanceTimersByTimeAsync(100)
+      await expect(execution).resolves.toBe('ok')
+      expect(attempts).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('throws LoopDetected after exceeding maxIterations', async () => {
     // Use high repeat threshold so iteration cap fires first
     configure({
@@ -82,149 +153,98 @@ describe('guard()', () => {
     expect(vi.getTimerCount()).toBe(0)
     vi.useRealTimers()
   })
+
+  it('does not leak timers across high-volume successful calls', async () => {
+    configure({
+      loopDetection: {
+        repeatThreshold: 2001,
+        windowSize: 2001,
+      },
+    })
+
+    const run = createRun('load-test', { timeout: 1000, maxIterations: 2001, onLoop: 'warn' })
+    const fast = run.guard(async function fastUnderLoad() {
+      return 'ok'
+    })
+
+    const baselineHandles = countTimeoutHandles()
+    for (let i = 0; i < 1000; i++) {
+      await fast()
+    }
+    const afterHandles = countTimeoutHandles()
+
+    expect(afterHandles).toBe(baselineHandles)
+  })
+
+  it('avoids unhandled rejections from timed-out functions that reject later', async () => {
+    vi.useFakeTimers()
+    const unhandledRejection = vi.fn()
+    process.on('unhandledRejection', unhandledRejection)
+
+    try {
+      const run = createRun('late-rejection', { timeout: 50 })
+      const fn = run.guard(async function lateReject() {
+        await new Promise((_, reject) => setTimeout(() => reject(new Error('late failure')), 200))
+      })
+
+      const execution = fn()
+      const timeoutPromise = execution.catch((err) => err)
+      await vi.advanceTimersByTimeAsync(50)
+      const timeoutError = await timeoutPromise
+      expect(timeoutError).toBeInstanceOf(GuardTimeout)
+
+      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
+      expect(unhandledRejection).not.toHaveBeenCalled()
+    } finally {
+      process.removeListener('unhandledRejection', unhandledRejection)
+      vi.useRealTimers()
+    }
+  })
+
+  it('assigns unique step numbers when guarded calls run concurrently', async () => {
+    configure({
+      defaults: { traceOutput: TRACE_FILE },
+    })
+
+    const run = createRun('parallel-run')
+    const step = run.guard(async function parallelStep(delay: unknown) {
+      await new Promise((resolve) => setTimeout(resolve, delay as number))
+      return delay
+    })
+
+    await Promise.all([step(20), step(5), step(1)])
+    await run.end()
+
+    const stepRecords = readStepRecords()
+    const stepNumbers = stepRecords.map((record) => Number(record['stepNumber']))
+
+    expect(stepNumbers).toHaveLength(3)
+    expect(new Set(stepNumbers).size).toBe(3)
+    expect([...stepNumbers].sort((a, b) => a - b)).toEqual([1, 2, 3])
+  })
 })
 
-/** Read the first step record from the trace file (after flushing via run.end()). */
-async function readFirstStep(): Promise<Record<string, unknown>> {
+function readStepRecords(): Record<string, unknown>[] {
   const trace = readFileSync(TRACE_FILE, 'utf-8')
-  const lines = trace.trim().split('\n').map(l => JSON.parse(l) as Record<string, unknown>)
-  const step = lines.find(r => r.recordType === 'step')
-  if (!step) throw new Error('No step record found in trace')
-  return step
+  return trace
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((record) => record['recordType'] === 'step')
 }
 
-describe('auto cost extraction', () => {
-  it('extracts actual cost from OpenAI-shaped response (usage.prompt_tokens)', async () => {
-    const run = createRun('test')
-    const fn = run.guard(
-      async function callLLM() {
-        return {
-          model: 'openai/gpt-4o',
-          usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
-        }
-      },
-      { model: 'openai/gpt-4o' },
-    )
+function countTimeoutHandles(): number {
+  const proc = process as NodeJS.Process & { _getActiveHandles?: () => unknown[] }
+  if (!proc._getActiveHandles) return 0
 
-    await fn()
-    await run.end()
-
-    const step = await readFirstStep()
-    expect(step.tokensIn).toBe(1000)
-    expect(step.tokensOut).toBe(500)
-    expect(step.costUsd).toBeGreaterThan(0)
-  })
-
-  it('extracts actual cost from Anthropic-shaped response (usage.input_tokens)', async () => {
-    const run = createRun('test')
-    const fn = run.guard(
-      async function callAnthropic() {
-        return {
-          model: 'claude-opus-4-6',
-          usage: { input_tokens: 800, output_tokens: 400 },
-        }
-      },
-      { model: 'anthropic/claude-opus-4-6' },
-    )
-
-    await fn()
-    await run.end()
-
-    const step = await readFirstStep()
-    expect(step.tokensIn).toBe(800)
-    expect(step.tokensOut).toBe(400)
-  })
-
-  it('uses custom costExtractor when provided', async () => {
-    const run = createRun('test')
-    const fn = run.guard(
-      async function callCustom() {
-        return { meta: { in: 300, out: 150 } }
-      },
-      {
-        model: 'openai/gpt-4o',
-        costExtractor: (result) => {
-          const r = result as { meta: { in: number; out: number } }
-          return { tokensIn: r.meta.in, tokensOut: r.meta.out }
-        },
-      },
-    )
-
-    await fn()
-    await run.end()
-
-    const step = await readFirstStep()
-    expect(step.tokensIn).toBe(300)
-    expect(step.tokensOut).toBe(150)
-  })
-
-  it('falls back to pre-flight estimate when result has no usage data', async () => {
-    const run = createRun('test')
-    const fn = run.guard(
-      async function noUsage() {
-        return { data: 'plain result, no usage' }
-      },
-      { model: 'openai/gpt-4o', estimatedTokensIn: 100, estimatedTokensOut: 50 },
-    )
-
-    await fn()
-    await run.end()
-
-    const step = await readFirstStep()
-    expect(step.tokensIn).toBe(100)
-    expect(step.tokensOut).toBe(50)
-  })
-
-  it('works without model specified — tracks steps but skips cost', async () => {
-    const run = createRun('test')
-    const fn = run.guard(async function noCost() {
-      return 'plain string result'
+  return proc
+    ._getActiveHandles()
+    .filter((handle) => {
+      if (!handle || typeof handle !== 'object') return false
+      const ctor = (handle as { constructor?: { name?: string } }).constructor
+      return ctor?.name === 'Timeout'
     })
+    .length
+}
 
-    await expect(fn()).resolves.toBe('plain string result')
-    await run.end()
-  })
-
-  it('backward compat: estimatedTokensIn/Out still work for pre-flight check', async () => {
-    configure({ defaults: { maxCostPerRun: 0.0001 } })
-
-    const run = createRun('test')
-    const fn = run.guard(
-      async function expensive() { return null },
-      { model: 'openai/gpt-4o', estimatedTokensIn: 10_000_000, estimatedTokensOut: 5_000_000 },
-    )
-
-    await expect(fn()).rejects.toThrow(BudgetExceeded)
-  })
-
-  it('auto pre-flight estimate blocks obviously over-budget calls', async () => {
-    configure({ defaults: { maxCostPerRun: 0.000001 } })
-
-    const run = createRun('test')
-    const fn = run.guard(
-      async function hugeArgs(data: unknown) { return data },
-      { model: 'openai/gpt-4o' },
-    )
-    const bigPayload = 'x'.repeat(100_000)
-
-    await expect(fn(bigPayload)).rejects.toThrow(BudgetExceeded)
-  })
-
-  it('global costExtractor via configure() applies to all guard calls', async () => {
-    configure({
-      costExtractor: () => ({ tokensIn: 999, tokensOut: 111 }),
-    })
-
-    const run = createRun('test')
-    const fn = run.guard(async function withGlobal() {
-      return { anything: true }
-    })
-
-    await fn()
-    await run.end()
-
-    const step = await readFirstStep()
-    expect(step.tokensIn).toBe(999)
-    expect(step.tokensOut).toBe(111)
-  })
-})

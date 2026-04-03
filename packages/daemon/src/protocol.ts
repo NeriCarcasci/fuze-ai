@@ -87,8 +87,9 @@ export interface KillResponse    { type: 'kill';  reason: string; message: strin
 export interface PauseResponse   { type: 'pause'; reason: string; approvalId: string }
 export interface RetryResponse   { type: 'retry'; context: string }
 export interface ConfigResponse  { type: 'config'; tools: Record<string, ToolConfig> }
+export interface ErrorResponse   { type: 'error'; message: string }
 
-export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse | ConfigResponse
+export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse | ConfigResponse | ErrorResponse
 
 const REQUIRED_FIELDS: Record<string, string[]> = {
   run_start:       ['runId', 'agentId'],

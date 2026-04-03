@@ -1,15 +1,13 @@
 import type { FuzeConfig, GuardOptions, RunContext } from './types.js';
 import type { ToolRegistration } from './services/index.js';
 export type { GuardOptions, FuzeConfig, RunContext } from './types.js';
-export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js';
+export { LoopDetected, GuardTimeout, FuzeError } from './errors.js';
 export { extractUsageFromResult } from './pricing.js';
 export type { ExtractedUsage } from './pricing.js';
+export { TraceRecorder, verifyChain } from './trace-recorder.js';
+export type { TraceEntry, SignedTraceEntry, VerifyChainResult } from './trace-recorder.js';
 export type { FuzeService, ToolRegistration, ToolConfig } from './services/index.js';
 export { createService, ApiService, DaemonService, NoopService } from './services/index.js';
-/** @deprecated Use FuzeService / createService() instead. */
-export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js';
-/** @deprecated Use FuzeService instead. */
-export type { TelemetryTransport } from './transports/index.js';
 /**
  * Set global configuration programmatically (alternative to fuze.toml).
  * Values set here override fuze.toml values.
@@ -21,8 +19,7 @@ export type { TelemetryTransport } from './transports/index.js';
  * import { configure } from 'fuze-ai'
  *
  * configure({
- *   defaults: { maxRetries: 3, timeout: 30000, maxCostPerRun: 10.0 },
- *   providers: { 'openai/gpt-4o': { input: 0.0025, output: 0.01 } }
+ *   defaults: { maxRetries: 3, timeout: 30000 },
  * })
  * ```
  */
@@ -31,7 +28,7 @@ export declare function configure(config: FuzeConfig): void;
  * Wraps any sync or async function with Fuze protection.
  *
  * Creates an implicit single-step run context. For multi-step runs
- * that share budget and loop detection state, use `createRun()` instead.
+ * that share loop detection state, use `createRun()` instead.
  *
  * @param fn - The function to wrap.
  * @param options - Per-function guard options.
@@ -49,13 +46,13 @@ export declare function configure(config: FuzeConfig): void;
  *   async (customerId: string, amount: number) => {
  *     return stripe.createInvoice(customerId, amount)
  *   },
- *   { sideEffect: true, maxCost: 0.50 }
+ *   { sideEffect: true }
  * )
  * ```
  */
 export declare function guard<T extends (...args: unknown[]) => unknown>(fn: T, options?: GuardOptions): T;
 /**
- * Creates a scoped run context with shared BudgetTracker, LoopDetector,
+ * Creates a scoped run context with shared UsageTracker, LoopDetector,
  * and TraceRecorder across all guarded steps.
  *
  * @param agentId - An identifier for the agent/caller. Default: 'default'.
@@ -66,14 +63,14 @@ export declare function guard<T extends (...args: unknown[]) => unknown>(fn: T, 
  * ```ts
  * import { createRun } from 'fuze-ai'
  *
- * const run = createRun('research-agent', { maxCostPerRun: 5.0 })
+ * const run = createRun('research-agent', { maxIterations: 50 })
  * const search = run.guard(searchFn)
- * const analyse = run.guard(analyseFn, { maxCost: 1.0 })
+ * const analyse = run.guard(analyseFn)
  *
  * await search('query')
  * await analyse('data')
  *
- * console.log(run.getStatus()) // { totalCost, totalTokensIn, ... }
+ * console.log(run.getStatus()) // { totalTokensIn, totalTokensOut, stepCount }
  * await run.end()
  * ```
  */
@@ -92,8 +89,8 @@ export declare function resetConfig(): void;
  * import { registerTools } from 'fuze-ai'
  *
  * registerTools([
- *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, maxBudget: 0.5, timeout: 30000 } },
- *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, maxBudget: 0.1, timeout: 10000 } },
+ *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, timeout: 30000 } },
+ *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, timeout: 10000 } },
  * ])
  * ```
  */

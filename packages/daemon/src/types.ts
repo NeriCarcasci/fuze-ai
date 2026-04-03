@@ -13,7 +13,6 @@ export interface StepData {
   argsHash: string
   sideEffect: boolean
   startedAt: string
-  hasSideEffect?: boolean
 }
 
 export interface StepMetadata {

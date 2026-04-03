@@ -4,7 +4,8 @@
  */
 export class AlertManager {
     config;
-    /** key → timestamp of last emission */
+    static WEBHOOK_TIMEOUT_MS = 10_000;
+    /** key -> timestamp of last emission */
     recentKeys = new Map();
     history = [];
     constructor(config = { dedupWindowMs: 60_000, webhookUrls: [] }) {
@@ -47,18 +48,24 @@ export class AlertManager {
     clearDedup() {
         this.recentKeys.clear();
     }
-    // ── Private ──────────────────────────────────────────────────────────────
     _writeStderr(alert) {
         process.stderr.write(`[fuze-daemon] ${alert.severity.toUpperCase()} ${alert.type}: ${alert.message}\n`);
     }
     _fireWebhooks(alert) {
         for (const url of this.config.webhookUrls ?? []) {
-            fetch(url, {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), AlertManager.WEBHOOK_TIMEOUT_MS);
+            void fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(alert),
-            }).catch(() => {
-                // Webhook failures are silent — don't disrupt the daemon
+                signal: controller.signal,
+            })
+                .catch(() => {
+                // Webhook failures are silent - don't disrupt the daemon
+            })
+                .finally(() => {
+                clearTimeout(timeout);
             });
         }
     }

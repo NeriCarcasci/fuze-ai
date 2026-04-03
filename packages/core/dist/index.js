@@ -1,26 +1,44 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigLoader } from './config-loader.js';
-import { BudgetTracker } from './budget-tracker.js';
+import { UsageTracker } from './budget-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
 import { createService } from './services/index.js';
 import { createGuardWrapper } from './guard.js';
-import { mergePricing } from './pricing.js';
 // Module-level service singleton — one connection per process, lazily created.
 let _service = null;
 function getOrCreateService(config) {
     if (!_service) {
         _service = createService(config);
-        void _service.connect();
+        fireAndForget(_service.connect());
     }
     return _service;
 }
-export { BudgetExceeded, LoopDetected, GuardTimeout, FuzeError } from './errors.js';
+function fireAndForget(promise) {
+    promise.catch(() => undefined);
+}
+function mergeOptional(base, override) {
+    if (!base && !override)
+        return undefined;
+    return { ...(base ?? {}), ...(override ?? {}) };
+}
+function mergeConfigs(base, override) {
+    return {
+        ...base,
+        ...override,
+        defaults: mergeOptional(base.defaults, override.defaults),
+        loopDetection: mergeOptional(base.loopDetection, override.loopDetection),
+        daemon: mergeOptional(base.daemon, override.daemon),
+        cloud: mergeOptional(base.cloud, override.cloud),
+        project: mergeOptional(base.project, override.project),
+        usageExtractor: override.usageExtractor ?? base.usageExtractor,
+    };
+}
+export { LoopDetected, GuardTimeout, FuzeError } from './errors.js';
 export { extractUsageFromResult } from './pricing.js';
+export { TraceRecorder, verifyChain } from './trace-recorder.js';
 export { createService, ApiService, DaemonService, NoopService } from './services/index.js';
-/** @deprecated Use FuzeService / createService() instead. */
-export { createTransport, NoopTransport, SocketTransport, CloudTransport } from './transports/index.js';
 // Global configuration state
 let globalConfig = {};
 let configLoaded = false;
@@ -30,7 +48,7 @@ let configLoaded = false;
 function ensureConfig() {
     if (!configLoaded) {
         try {
-            globalConfig = { ...ConfigLoader.load(), ...globalConfig };
+            globalConfig = mergeConfigs(ConfigLoader.load(), globalConfig);
         }
         catch {
             // If fuze.toml is missing or invalid, use empty config (defaults apply)
@@ -50,21 +68,16 @@ function ensureConfig() {
  * import { configure } from 'fuze-ai'
  *
  * configure({
- *   defaults: { maxRetries: 3, timeout: 30000, maxCostPerRun: 10.0 },
- *   providers: { 'openai/gpt-4o': { input: 0.0025, output: 0.01 } }
+ *   defaults: { maxRetries: 3, timeout: 30000 },
  * })
  * ```
  */
 export function configure(config) {
-    globalConfig = config;
-    configLoaded = true;
-    // Merge any custom provider pricing
-    if (config.providers) {
-        mergePricing(config.providers);
-    }
+    globalConfig = mergeConfigs(globalConfig, config);
+    configLoaded = false;
     // Reset service so it picks up new config (cloud key, socket path, etc.)
     if (_service) {
-        _service.disconnect();
+        fireAndForget(_service.disconnect());
         _service = null;
     }
 }
@@ -72,7 +85,7 @@ export function configure(config) {
  * Wraps any sync or async function with Fuze protection.
  *
  * Creates an implicit single-step run context. For multi-step runs
- * that share budget and loop detection state, use `createRun()` instead.
+ * that share loop detection state, use `createRun()` instead.
  *
  * @param fn - The function to wrap.
  * @param options - Per-function guard options.
@@ -90,7 +103,7 @@ export function configure(config) {
  *   async (customerId: string, amount: number) => {
  *     return stripe.createInvoice(customerId, amount)
  *   },
- *   { sideEffect: true, maxCost: 0.50 }
+ *   { sideEffect: true }
  * )
  * ```
  */
@@ -101,7 +114,7 @@ export function guard(fn, options) {
     const service = getOrCreateService(config);
     const context = {
         runId,
-        budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
+        usageTracker: new UsageTracker(),
         loopDetector: new LoopDetector({
             ...resolved.loopDetection,
             maxIterations: resolved.maxIterations,
@@ -111,12 +124,12 @@ export function guard(fn, options) {
         stepNumber: 0,
         service,
     };
-    void service.sendRunStart(runId, fn.name || 'anonymous', {});
+    fireAndForget(service.sendRunStart(runId, fn.name || 'anonymous', {}));
     const guardFn = createGuardWrapper(resolved, context);
     return guardFn(fn, options);
 }
 /**
- * Creates a scoped run context with shared BudgetTracker, LoopDetector,
+ * Creates a scoped run context with shared UsageTracker, LoopDetector,
  * and TraceRecorder across all guarded steps.
  *
  * @param agentId - An identifier for the agent/caller. Default: 'default'.
@@ -127,14 +140,14 @@ export function guard(fn, options) {
  * ```ts
  * import { createRun } from 'fuze-ai'
  *
- * const run = createRun('research-agent', { maxCostPerRun: 5.0 })
+ * const run = createRun('research-agent', { maxIterations: 50 })
  * const search = run.guard(searchFn)
- * const analyse = run.guard(analyseFn, { maxCost: 1.0 })
+ * const analyse = run.guard(analyseFn)
  *
  * await search('query')
  * await analyse('data')
  *
- * console.log(run.getStatus()) // { totalCost, totalTokensIn, ... }
+ * console.log(run.getStatus()) // { totalTokensIn, totalTokensOut, stepCount }
  * await run.end()
  * ```
  */
@@ -145,7 +158,7 @@ export function createRun(agentId = 'default', options) {
     const service = getOrCreateService(config);
     const context = {
         runId,
-        budgetTracker: new BudgetTracker(resolved.maxCostPerStep, resolved.maxCostPerRun),
+        usageTracker: new UsageTracker(),
         loopDetector: new LoopDetector({
             ...resolved.loopDetection,
             maxIterations: resolved.maxIterations,
@@ -156,19 +169,18 @@ export function createRun(agentId = 'default', options) {
         service,
     };
     context.traceRecorder.startRun(runId, agentId, resolved);
-    void service.sendRunStart(runId, agentId, {});
+    fireAndForget(service.sendRunStart(runId, agentId, {}));
     const guardFn = createGuardWrapper(resolved, context);
     return {
         runId,
         guard: (fn, stepOptions) => {
             return guardFn(fn, stepOptions);
         },
-        getStatus: () => context.budgetTracker.getStatus(),
+        getStatus: () => context.usageTracker.getStatus(),
         end: async (status = 'completed') => {
-            const { totalCost } = context.budgetTracker.getStatus();
-            context.traceRecorder.endRun(runId, status, totalCost);
+            context.traceRecorder.endRun(runId, status);
             await context.traceRecorder.flush();
-            await service.sendRunEnd(runId, status, totalCost);
+            await service.sendRunEnd(runId, status);
         },
     };
 }
@@ -179,7 +191,7 @@ export function resetConfig() {
     globalConfig = {};
     configLoaded = false;
     if (_service) {
-        _service.disconnect();
+        fireAndForget(_service.disconnect());
         _service = null;
     }
 }
@@ -193,8 +205,8 @@ export function resetConfig() {
  * import { registerTools } from 'fuze-ai'
  *
  * registerTools([
- *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, maxBudget: 0.5, timeout: 30000 } },
- *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, maxBudget: 0.1, timeout: 10000 } },
+ *   { name: 'search', description: 'Vector search', sideEffect: false, defaults: { maxRetries: 3, timeout: 30000 } },
+ *   { name: 'sendEmail', description: 'Send email', sideEffect: true, defaults: { maxRetries: 1, timeout: 10000 } },
  * ])
  * ```
  */
@@ -202,6 +214,6 @@ export function registerTools(tools) {
     const config = ensureConfig();
     const service = getOrCreateService(config);
     const projectId = config.project?.projectId ?? process.env['FUZE_PROJECT_ID'] ?? 'default';
-    void service.registerTools(projectId, tools);
+    fireAndForget(service.registerTools(projectId, tools));
 }
 //# sourceMappingURL=index.js.map

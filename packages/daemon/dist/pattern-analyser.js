@@ -3,6 +3,8 @@
  * All analysis is in-memory; only aggregates are stored.
  */
 export class PatternAnalyser {
+    static MAX_AGENTS = 10_000;
+    static EVICT_RATIO = 0.2;
     outcomes = new Map();
     /** Minimum number of runs before emitting pattern alerts. */
     MIN_RUNS_FOR_ANALYSIS = 5;
@@ -16,10 +18,14 @@ export class PatternAnalyser {
      * @param cost - Total cost of the run (default 0).
      */
     recordRunOutcome(agentId, status, failedAtStep, failedTool, cost = 0) {
-        if (!this.outcomes.has(agentId)) {
-            this.outcomes.set(agentId, []);
+        const existing = this.outcomes.get(agentId) ?? [];
+        existing.push({ status, failedAtStep, failedTool, cost });
+        // Touch on write so map order approximates LRU semantics.
+        if (this.outcomes.has(agentId)) {
+            this.outcomes.delete(agentId);
         }
-        this.outcomes.get(agentId).push({ status, failedAtStep, failedTool, cost });
+        this.outcomes.set(agentId, existing);
+        this.evictOldAgentsIfNeeded();
     }
     /**
      * Analyse all recorded outcomes and return alerts for patterns that cross thresholds.
@@ -110,6 +116,17 @@ export class PatternAnalyser {
             avgCost,
             failureHotspot,
         };
+    }
+    evictOldAgentsIfNeeded() {
+        if (this.outcomes.size <= PatternAnalyser.MAX_AGENTS)
+            return;
+        const toEvict = Math.ceil(this.outcomes.size * PatternAnalyser.EVICT_RATIO);
+        for (let i = 0; i < toEvict; i++) {
+            const oldest = this.outcomes.keys().next();
+            if (oldest.done)
+                break;
+            this.outcomes.delete(oldest.value);
+        }
     }
 }
 //# sourceMappingURL=pattern-analyser.js.map

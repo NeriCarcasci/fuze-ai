@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -52,17 +52,19 @@ describe('UDSServer', () => {
   let socketPath: string
   let dbPath: string
   let auditStore: AuditStore
+  let patternAnalyser: PatternAnalyser
 
   beforeEach(async () => {
     socketPath = tempSocket()
     dbPath = tempDb()
     auditStore = new AuditStore(dbPath)
     await auditStore.init()
+    patternAnalyser = new PatternAnalyser()
 
     server = new UDSServer(socketPath, {
       runManager: new RunManager(),
       budgetEnforcer: new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 }),
-      patternAnalyser: new PatternAnalyser(),
+      patternAnalyser,
       auditStore,
       alertManager: new AlertManager({ dedupWindowMs: 0, webhookUrls: [] }),
     })
@@ -144,5 +146,77 @@ describe('UDSServer', () => {
     await new Promise((r) => setTimeout(r, 50))
     const run = await auditStore.getRun('r-persist')
     expect(run?.agentId).toBe('agent-p')
+  })
+
+  it('rejects oversized UDS payload buffers', async () => {
+    const warnSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const sock = net.createConnection(socketPath)
+    await new Promise<void>((resolve) => sock.on('connect', () => resolve()))
+
+    const closed = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('socket was not closed for oversized payload')), 1000)
+      sock.on('close', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      sock.on('error', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+    })
+
+    sock.write('x'.repeat(1_048_577))
+    await closed
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('oversized UDS message buffer'))
+    warnSpy.mockRestore()
+  })
+
+  it('passes correct failedAtStep and failedTool to pattern analyser on run_end', async () => {
+    const outcomeSpy = vi.spyOn(patternAnalyser, 'recordRunOutcome')
+
+    await sendLine(socketPath, JSON.stringify({
+      type: 'run_start', runId: 'r-pattern', agentId: 'agent-pattern',
+    }))
+    await sendLine(socketPath, JSON.stringify({
+      type: 'step_start', runId: 'r-pattern', stepId: 'step-42', stepNumber: 1,
+      toolName: 'dangerous_tool', argsHash: 'abc42', sideEffect: false,
+    }))
+    await sendLine(socketPath, JSON.stringify({
+      type: 'step_end', runId: 'r-pattern', stepId: 'step-42',
+      costUsd: 1.23, tokensIn: 10, tokensOut: 20, latencyMs: 33,
+    }))
+    await sendLine(socketPath, JSON.stringify({
+      type: 'run_end', runId: 'r-pattern', status: 'failed', totalCost: 1.23,
+    }))
+
+    expect(outcomeSpy).toHaveBeenCalledWith(
+      'agent-pattern',
+      'failed',
+      'step-42',
+      'dangerous_tool',
+      1.23,
+    )
+  })
+
+  it('returns an error response when dispatch exceeds 30s', async () => {
+    vi.useFakeTimers()
+    const warnSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    vi.spyOn(server as unknown as { _dispatch: (msg: unknown) => Promise<unknown> }, '_dispatch')
+      .mockImplementation(async () => new Promise(() => {}))
+
+    const timeoutPromise = (server as unknown as {
+      _dispatchWithTimeout: (msg: unknown) => Promise<{ type: string; message: string } | null>
+    })._dispatchWithTimeout({ type: 'get_config' })
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    const response = await timeoutPromise
+
+    expect(response).toEqual({ type: 'error', message: 'dispatch_timeout' })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('dispatch timed out after 30000ms'))
+
+    warnSpy.mockRestore()
+    vi.useRealTimers()
   })
 })

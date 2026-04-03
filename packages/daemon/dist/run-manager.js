@@ -6,6 +6,14 @@ export class RunManager {
     static MAX_ENDED = 1000;
     runs = new Map();
     endedRuns = new Map();
+    trimEndedRuns() {
+        if (this.endedRuns.size <= RunManager.MAX_ENDED)
+            return;
+        const oldest = this.endedRuns.keys().next();
+        if (!oldest.done) {
+            this.endedRuns.delete(oldest.value);
+        }
+    }
     /**
      * Register a new run.
      *
@@ -72,10 +80,7 @@ export class RunManager {
         run.totalCost = totalCost;
         this.runs.delete(runId);
         this.endedRuns.set(runId, run);
-        if (this.endedRuns.size > RunManager.MAX_ENDED) {
-            const oldest = this.endedRuns.keys().next().value;
-            this.endedRuns.delete(oldest);
-        }
+        this.trimEndedRuns();
     }
     /**
      * Kill an active run (sets status to 'killed').
@@ -91,10 +96,7 @@ export class RunManager {
         run.killReason = reason;
         this.runs.delete(runId);
         this.endedRuns.set(runId, run);
-        if (this.endedRuns.size > RunManager.MAX_ENDED) {
-            const oldest = this.endedRuns.keys().next().value;
-            this.endedRuns.delete(oldest);
-        }
+        this.trimEndedRuns();
     }
     /**
      * Returns all currently active (running) runs.

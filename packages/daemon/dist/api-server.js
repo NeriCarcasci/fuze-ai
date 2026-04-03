@@ -1,11 +1,5 @@
 import * as http from 'node:http';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Dashboard dist is at packages/dashboard/dist relative to this file's package root
-const DASHBOARD_DIST = path.resolve(__dirname, '..', '..', 'dashboard', 'dist');
 /**
  * HTTP + WebSocket API server.
  *
@@ -23,8 +17,6 @@ const DASHBOARD_DIST = path.resolve(__dirname, '..', '..', 'dashboard', 'dist');
  * WebSocket:
  *   ws://host/ws                          — live alerts stream
  *
- * Static files:
- *   GET  /                                — dashboard SPA (fallback to index.html)
  */
 export class APIServer {
     port;
@@ -88,8 +80,7 @@ export class APIServer {
             this._json(res, 400, { error: 'Use WebSocket' });
             return;
         }
-        // Static file serving for dashboard SPA
-        this._serveStatic(url, res);
+        this._json(res, 404, { error: 'Not found' });
     }
     routes = [
         { method: 'GET', pattern: /^\/api\/health$/, handler: (_m, _req, res) => this._handleHealth(res) },
@@ -309,54 +300,6 @@ export class APIServer {
         const reliability = this.deps.patternAnalyser.getAgentReliability(agentId);
         const spend = this.deps.budgetEnforcer.getAgentSpend(agentId);
         this._json(res, 200, { agentId, reliability, spend });
-    }
-    // ── Static file serving ───────────────────────────────────────────────────
-    _serveStatic(urlPath, res) {
-        if (!fs.existsSync(DASHBOARD_DIST)) {
-            // Dashboard not built yet — show placeholder
-            res.setHeader('Content-Type', 'text/html');
-            res.writeHead(200);
-            res.end('<html><body><h1>Fuze AI Dashboard</h1><p>Run <code>npm run build --workspace=packages/dashboard</code> to build the dashboard.</p></body></html>');
-            return;
-        }
-        // Sanitize path to prevent directory traversal
-        const relPath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '');
-        const filePath = path.resolve(DASHBOARD_DIST, relPath);
-        // Ensure we stay within DASHBOARD_DIST (path.relative handles Windows paths)
-        const rel = path.relative(DASHBOARD_DIST, filePath);
-        if (rel.startsWith('..') || path.isAbsolute(rel)) {
-            res.writeHead(403);
-            res.end();
-            return;
-        }
-        if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-            // SPA fallback — serve index.html for client-side routing
-            const indexPath = path.join(DASHBOARD_DIST, 'index.html');
-            if (!fs.existsSync(indexPath)) {
-                res.writeHead(404);
-                res.end();
-                return;
-            }
-            res.setHeader('Content-Type', 'text/html');
-            res.writeHead(200);
-            fs.createReadStream(indexPath).pipe(res);
-            return;
-        }
-        const ext = path.extname(filePath);
-        const mimeTypes = {
-            '.html': 'text/html',
-            '.js': 'application/javascript',
-            '.css': 'text/css',
-            '.json': 'application/json',
-            '.png': 'image/png',
-            '.svg': 'image/svg+xml',
-            '.ico': 'image/x-icon',
-            '.woff2': 'font/woff2',
-            '.woff': 'font/woff',
-        };
-        res.setHeader('Content-Type', mimeTypes[ext] ?? 'application/octet-stream');
-        res.writeHead(200);
-        fs.createReadStream(filePath).pipe(res);
     }
     // ── WebSocket ─────────────────────────────────────────────────────────────
     _onWsConnection(ws) {

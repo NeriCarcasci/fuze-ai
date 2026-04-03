@@ -5,8 +5,9 @@
  */
 export class NoopService {
     async connect() { return true; }
-    disconnect() { }
+    async disconnect() { }
     isConnected() { return true; }
+    async flush() { }
     async registerTools(_projectId, _tools) { }
     getToolConfig(_toolName) { return null; }
     async refreshConfig() { }
@@ -16,6 +17,6 @@ export class NoopService {
     }
     async sendStepEnd(_runId, _stepId, _data) { }
     async sendGuardEvent(_runId, _event) { }
-    async sendRunEnd(_runId, _status, _totalCost) { }
+    async sendRunEnd(_runId, _status) { }
 }
 //# sourceMappingURL=noop-service.js.map

@@ -15,6 +15,8 @@ export declare class IdempotencyManager {
     generateKey(runId: string, toolName: string, argsHash: string): string;
     /** Returns true if this exact tool+args combination has already run in this run. */
     isDuplicate(key: string): Promise<boolean>;
+    /** Alias used by runtime handlers before executing a step. */
+    check(key: string): Promise<boolean>;
     /** Record a completed execution so future identical calls return the cache. */
     recordExecution(key: string, runId: string, stepId: string, toolName: string, argsHash: string, result: unknown): Promise<void>;
     /** Returns the cached result for a duplicate call, or null if not found. */

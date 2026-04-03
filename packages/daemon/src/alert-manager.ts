@@ -12,7 +12,8 @@ export interface AlertInput {
  * Deduplicates identical alerts within a configurable window.
  */
 export class AlertManager {
-  /** key → timestamp of last emission */
+  private static readonly WEBHOOK_TIMEOUT_MS = 10_000
+  /** key -> timestamp of last emission */
   private readonly recentKeys = new Map<string, number>()
   private readonly history: Alert[] = []
 
@@ -61,8 +62,6 @@ export class AlertManager {
     this.recentKeys.clear()
   }
 
-  // ── Private ──────────────────────────────────────────────────────────────
-
   private _writeStderr(alert: Alert): void {
     process.stderr.write(
       `[fuze-daemon] ${alert.severity.toUpperCase()} ${alert.type}: ${alert.message}\n`,
@@ -71,13 +70,21 @@ export class AlertManager {
 
   private _fireWebhooks(alert: Alert): void {
     for (const url of this.config.webhookUrls ?? []) {
-      fetch(url, {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), AlertManager.WEBHOOK_TIMEOUT_MS)
+
+      void fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(alert),
-      }).catch(() => {
-        // Webhook failures are silent — don't disrupt the daemon
+        signal: controller.signal,
       })
+        .catch(() => {
+          // Webhook failures are silent - don't disrupt the daemon
+        })
+        .finally(() => {
+          clearTimeout(timeout)
+        })
     }
   }
 }

@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { GuardOptions, ResolvedOptions } from './types.js'
-import { BudgetTracker } from './budget-tracker.js'
+import { UsageTracker } from './budget-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
 import type { FuzeService } from './services/index.js'
-import { estimateCost, extractUsageFromResult, estimateFromArgs } from './pricing.js'
+import { extractUsageFromResult } from './pricing.js'
 import { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
 
 /**
@@ -13,25 +13,25 @@ import { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
  */
 export interface GuardContext {
   runId: string
-  budgetTracker: BudgetTracker
+  usageTracker: UsageTracker
   loopDetector: LoopDetector
   sideEffectRegistry: SideEffectRegistry
   traceRecorder: TraceRecorder
   stepNumber: number
-  /** Service for telemetry + remote config — NoopService when no daemon/cloud configured. */
+  /** Service for telemetry + remote config - NoopService when no daemon/cloud configured. */
   service: FuzeService
 }
 
 /**
  * Creates the guard wrapper function bound to a specific run context.
  * @param resolvedOpts - Fully resolved options for this run.
- * @param context - Shared run context (budget, loop, trace, side-effects).
+ * @param context - Shared run context (usage, loop, trace, side-effects).
  * @returns A function that wraps any sync/async function with protection.
  */
 export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: GuardContext) {
   /**
    * Wraps a sync or async function with Fuze protection:
-   * loop detection, budget enforcement, timeout, side-effect tracking, and trace recording.
+   * loop detection, timeout, side-effect tracking, and trace recording.
    *
    * @param fn - The function to wrap.
    * @param options - Per-function guard options that override run-level config.
@@ -54,10 +54,9 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
       const argsHash = hashArgs(args)
       const startedAt = new Date().toISOString()
       const startMs = Date.now()
+      const stepNumber = ++context.stepNumber
 
-      context.stepNumber++
-
-      // 1. Check loop detector — Layer 1: iteration cap
+      // 1. Check loop detector - Layer 1: iteration cap
       const loopSignal = context.loopDetector.onStep()
       if (loopSignal) {
         context.traceRecorder.recordGuardEvent({
@@ -69,14 +68,14 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           severity: 'critical',
           details: loopSignal.details,
         })
-        void context.service.sendGuardEvent(context.runId, {
+        fireAndForget(context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'critical', details: loopSignal.details,
-        })
+        }))
         await context.traceRecorder.flush()
 
         if (opts.onLoop === 'kill') throw new LoopDetected(loopSignal, funcName)
         if (opts.onLoop === 'skip') return undefined
-        // 'warn' — continue execution
+        // 'warn' - continue execution
       }
 
       // Layer 2: repeated tool call detection
@@ -92,9 +91,9 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
           severity: 'action',
           details: toolSignal.details,
         })
-        void context.service.sendGuardEvent(context.runId, {
+        fireAndForget(context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'action', details: toolSignal.details,
-        })
+        }))
 
         if (opts.onLoop === 'kill') {
           await context.traceRecorder.flush()
@@ -103,7 +102,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         if (opts.onLoop === 'skip') return undefined
       }
 
-      // Apply remote config overrides (synchronous cache read — zero latency)
+      // Apply remote config overrides (synchronous cache read - zero latency)
       let callOpts = { ...opts }
       const remoteConfig = context.service.getToolConfig(funcName)
       if (remoteConfig) {
@@ -112,124 +111,173 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         }
         callOpts = {
           ...callOpts,
-          maxCostPerStep: Math.min(callOpts.maxCostPerStep ?? Infinity, remoteConfig.maxBudget),
           maxRetries: remoteConfig.maxRetries,
           timeout: remoteConfig.timeout,
         }
       }
 
-      // 2. Pre-flight budget check — use manual estimates if provided, otherwise estimate from args
-      const preflightCost =
-        callOpts.model && (callOpts.estimatedTokensIn !== undefined || callOpts.estimatedTokensOut !== undefined)
-          ? estimateCost(callOpts.model, callOpts.estimatedTokensIn ?? 0, callOpts.estimatedTokensOut ?? 0)
-          : estimateFromArgs(args, callOpts.model)
-      context.budgetTracker.checkBudget(preflightCost, funcName)
-
-      // 2b. Check service (org-level budget, kill switch). Falls back to proceed if unavailable.
+      // Check service (kill switch). Falls back to proceed if unavailable.
       const decision = await context.service.sendStepStart(context.runId, {
         stepId,
-        stepNumber: context.stepNumber,
+        stepNumber,
         toolName: funcName,
         argsHash,
         sideEffect: opts.sideEffect,
       })
       if (decision === 'kill') {
-        throw new FuzeError('Transport kill: budget exceeded or kill switch activated')
+        throw new FuzeError('Transport kill: kill switch activated')
       }
 
-      // 3. Execute with timeout
+      // 2. Execute with timeout + retry policy
       let result: unknown
       let error: string | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let recordedTokensIn = 0
+      let recordedTokensOut = 0
+
+      const clearTimer = (): void => {
+        if (timer !== undefined) {
+          clearTimeout(timer)
+          timer = undefined
+        }
+      }
 
       try {
-        if (callOpts.timeout < Infinity) {
-          let timer: ReturnType<typeof setTimeout>
-          result = await Promise.race([
-            Promise.resolve(fn.apply(this, args)).finally(() => clearTimeout(timer)),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new GuardTimeout(funcName, callOpts.timeout)), callOpts.timeout)
-            }),
-          ])
-        } else {
-          result = await Promise.resolve(fn.apply(this, args))
+        let attempt = 0
+        let retriesRemaining = Math.max(0, callOpts.maxRetries)
+
+        while (true) {
+          attempt += 1
+          try {
+            if (callOpts.timeout < Infinity) {
+              let timedOut = false
+              const fnPromise = Promise.resolve(fn.apply(this, args))
+                .catch((err: unknown) => {
+                  if (timedOut) return undefined
+                  throw err
+                })
+                .finally(() => {
+                  clearTimer()
+                })
+
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                timer = setTimeout(() => {
+                  timedOut = true
+                  reject(new GuardTimeout(funcName, callOpts.timeout))
+                }, callOpts.timeout)
+              })
+
+              result = await Promise.race([
+                fnPromise,
+                timeoutPromise,
+              ])
+            } else {
+              result = await Promise.resolve(fn.apply(this, args))
+            }
+
+            break
+          } catch (attemptError) {
+            if (isNonRetryableError(attemptError) || retriesRemaining <= 0) {
+              throw attemptError
+            }
+
+            retriesRemaining -= 1
+            const backoffMs = Math.min(100 * (2 ** (attempt - 1)), 5000)
+            const retryDetails = {
+              attempt,
+              nextAttempt: attempt + 1,
+              retriesRemaining,
+              maxRetries: callOpts.maxRetries,
+              delayMs: backoffMs,
+              error: attemptError instanceof Error ? attemptError.message : String(attemptError),
+            }
+
+            context.traceRecorder.recordGuardEvent({
+              eventId: randomUUID(),
+              runId: context.runId,
+              stepId,
+              timestamp: new Date().toISOString(),
+              type: 'retry',
+              severity: 'warning',
+              details: retryDetails,
+            })
+            fireAndForget(context.service.sendGuardEvent(context.runId, {
+              stepId,
+              eventType: 'retry',
+              severity: 'warning',
+              details: retryDetails,
+            }))
+
+            await wait(backoffMs)
+          } finally {
+            clearTimer()
+          }
         }
       } catch (err) {
         error = err instanceof Error ? err.message : String(err)
         throw err
       } finally {
-        // 4. Extract actual cost from result (auto-detection or custom extractor)
+        clearTimer()
+
+        // 3. Extract token usage from result (auto-detection or custom extractor)
         const endedAt = new Date().toISOString()
         const latencyMs = Date.now() - startMs
 
         const extracted = result !== undefined
-          ? (callOpts.costExtractor ? callOpts.costExtractor(result) : extractUsageFromResult(result))
+          ? (callOpts.usageExtractor ? callOpts.usageExtractor(result) : extractUsageFromResult(result))
           : null
 
-        let actualCost: number
-        let actualTokensIn: number
-        let actualTokensOut: number
-
         if (extracted) {
-          const modelForPricing = (extracted as { model?: string }).model ?? callOpts.model
-          actualCost = modelForPricing
-            ? estimateCost(modelForPricing, extracted.tokensIn, extracted.tokensOut)
-            : preflightCost
-          actualTokensIn = extracted.tokensIn
-          actualTokensOut = extracted.tokensOut
-        } else {
-          actualCost = preflightCost
-          actualTokensIn = callOpts.estimatedTokensIn ?? 0
-          actualTokensOut = callOpts.estimatedTokensOut ?? 0
+          recordedTokensIn = extracted.tokensIn
+          recordedTokensOut = extracted.tokensOut
         }
 
         context.traceRecorder.recordStep({
           stepId,
           runId: context.runId,
-          stepNumber: context.stepNumber,
+          stepNumber,
           startedAt,
           endedAt,
           toolName: funcName,
           argsHash,
           hasSideEffect: opts.sideEffect,
-          costUsd: actualCost,
-          tokensIn: actualTokensIn,
-          tokensOut: actualTokensOut,
+          tokensIn: recordedTokensIn,
+          tokensOut: recordedTokensOut,
           latencyMs,
           error,
         })
 
-        context.budgetTracker.recordCost(actualCost, actualTokensIn, actualTokensOut)
+        context.usageTracker.recordUsage(recordedTokensIn, recordedTokensOut)
 
         // Notify transport of step completion (fire-and-forget)
-        void context.service.sendStepEnd(context.runId, stepId, {
+        fireAndForget(context.service.sendStepEnd(context.runId, stepId, {
           toolName: funcName,
-          stepNumber: context.stepNumber,
+          stepNumber,
           argsHash,
           hasSideEffect: opts.sideEffect,
-          costUsd: actualCost,
-          tokensIn: actualTokensIn,
-          tokensOut: actualTokensOut,
+          tokensIn: recordedTokensIn,
+          tokensOut: recordedTokensOut,
           latencyMs,
           error: error ?? null,
-        })
+        }))
       }
 
-      // 5. Check progress — Layer 3
+      // 4. Check progress - Layer 3 (no-progress detection)
       const hasNewOutput = result !== undefined && result !== null
       const progressSignal = context.loopDetector.onProgress(hasNewOutput)
       if (progressSignal) {
         context.traceRecorder.recordGuardEvent({
           eventId: randomUUID(),
           runId: context.runId,
-          stepId,
+          stepId: stepId,
           timestamp: new Date().toISOString(),
           type: 'loop_detected',
           severity: 'warning',
           details: progressSignal.details,
         })
-        void context.service.sendGuardEvent(context.runId, {
+        fireAndForget(context.service.sendGuardEvent(context.runId, {
           stepId, eventType: 'loop_detected', severity: 'warning', details: progressSignal.details,
-        })
+        }))
 
         if (opts.onLoop === 'kill') {
           await context.traceRecorder.flush()
@@ -237,7 +285,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         }
       }
 
-      // 6. Record side-effect if applicable
+      // 5. Record side-effect if applicable
       if (opts.sideEffect) {
         context.sideEffectRegistry.recordSideEffect(stepId, funcName, result)
       }
@@ -257,14 +305,32 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
  */
 function hashArgs(args: unknown[]): string {
   const hash = createHash('sha256')
-  hash.update(JSON.stringify(args))
+  let serialized = '[unserializable]'
+  try {
+    serialized = JSON.stringify(args)
+  } catch {
+    serialized = String(args)
+  }
+  hash.update(serialized)
   return hash.digest('hex').slice(0, 16)
+}
+
+function fireAndForget(promise: Promise<unknown>): void {
+  promise.catch(() => undefined)
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isNonRetryableError(err: unknown): boolean {
+  return err instanceof GuardTimeout || err instanceof LoopDetected
 }
 
 /**
  * Merges step-level options with resolved run-level options.
  */
-function mergeStepOptions(
+export function mergeStepOptions(
   resolved: ResolvedOptions,
   step?: GuardOptions,
 ): ResolvedOptions {
@@ -274,14 +340,12 @@ function mergeStepOptions(
     ...resolved,
     maxRetries: step.maxRetries ?? resolved.maxRetries,
     timeout: step.timeout ?? resolved.timeout,
-    maxCostPerStep: step.maxCost ?? resolved.maxCostPerStep,
     maxIterations: step.maxIterations ?? resolved.maxIterations,
     onLoop: step.onLoop ?? resolved.onLoop,
+    traceOutput: resolved.traceOutput,
     sideEffect: step.sideEffect ?? resolved.sideEffect,
     compensate: step.compensate ?? resolved.compensate,
-    model: step.model ?? resolved.model,
-    costExtractor: step.costExtractor ?? resolved.costExtractor,
-    estimatedTokensIn: step.estimatedTokensIn ?? resolved.estimatedTokensIn,
-    estimatedTokensOut: step.estimatedTokensOut ?? resolved.estimatedTokensOut,
+    usageExtractor: step.usageExtractor ?? resolved.usageExtractor,
+    loopDetection: { ...resolved.loopDetection, ...step.loopDetection },
   }
 }

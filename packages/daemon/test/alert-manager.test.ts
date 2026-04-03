@@ -64,4 +64,31 @@ describe('AlertManager', () => {
     fast.emit({ type: 'x', severity: 'warning', message: 'y' })
     expect(fast.getHistory()).toHaveLength(2)
   })
+
+  it('aborts webhook fetch calls after 10 seconds', async () => {
+    vi.useFakeTimers()
+    let seenSignal: AbortSignal | undefined
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      seenSignal = init?.signal as AbortSignal | undefined
+      return new Promise<Response>(() => {
+        // intentionally never resolve to simulate a hung webhook
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const webhookAlerts = new AlertManager({
+      dedupWindowMs: 0,
+      webhookUrls: ['https://example.com/webhook'],
+    })
+    webhookAlerts.emit({ type: 'hook', severity: 'warning', message: 'slow hook' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(seenSignal?.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(seenSignal?.aborted).toBe(true)
+
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
 })

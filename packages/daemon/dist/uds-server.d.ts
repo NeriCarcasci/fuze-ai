@@ -3,12 +3,17 @@ import type { BudgetEnforcer } from './budget-enforcer.js';
 import type { PatternAnalyser } from './pattern-analyser.js';
 import type { AuditStore } from './audit-store.js';
 import type { AlertManager } from './alert-manager.js';
+import type { ConfigCache } from './config-cache.js';
+import type { IdempotencyManager } from './compensation/idempotency.js';
 export interface UDSServerDeps {
     runManager: RunManager;
     budgetEnforcer: BudgetEnforcer;
     patternAnalyser: PatternAnalyser;
     auditStore: AuditStore;
     alertManager: AlertManager;
+    idempotencyManager?: IdempotencyManager;
+    /** Optional — provides tool config responses to the SDK. */
+    configCache?: ConfigCache;
 }
 /**
  * Unix Domain Socket server for SDK ↔ Daemon communication.
@@ -39,6 +44,7 @@ export declare class UDSServer {
     get connectionCount(): number;
     private _onConnection;
     private _handleLine;
+    private _dispatchWithTimeout;
     private _dispatch;
 }
 //# sourceMappingURL=uds-server.d.ts.map

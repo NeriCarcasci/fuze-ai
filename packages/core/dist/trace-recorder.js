@@ -1,16 +1,136 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, writeFile } from 'node:fs/promises';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import * as os from 'node:os';
+import { dirname, join } from 'node:path';
+const ZERO_HASH = '0'.repeat(64);
+function getAuditKeyPath() {
+    return process.env['FUZE_AUDIT_KEY_PATH'] ?? join(os.homedir(), '.fuze', 'audit.key');
+}
+function ensureAuditKey() {
+    const keyPath = getAuditKeyPath();
+    const keyDir = dirname(keyPath);
+    mkdirSync(keyDir, { recursive: true });
+    if (!existsSync(keyPath)) {
+        writeFileSync(keyPath, randomBytes(32));
+    }
+    chmodSync(keyPath, 0o600);
+    const key = readFileSync(keyPath);
+    if (key.length !== 32) {
+        throw new Error(`Invalid audit key length at ${keyPath}: expected 32 bytes, got ${key.length}`);
+    }
+    return key;
+}
+function canonicalize(value) {
+    if (Array.isArray(value)) {
+        return value.map((entry) => canonicalize(entry));
+    }
+    if (value && typeof value === 'object') {
+        const input = value;
+        const output = {};
+        for (const key of Object.keys(input).sort()) {
+            output[key] = canonicalize(input[key]);
+        }
+        return output;
+    }
+    return value;
+}
+function stringifyForHash(value) {
+    return JSON.stringify(canonicalize(value));
+}
+function computeHash(entry) {
+    return createHash('sha256').update(stringifyForHash(entry)).digest('hex');
+}
+function getEntryId(entry) {
+    if (entry.recordType === 'step')
+        return entry.stepId;
+    if (entry.recordType === 'guard_event')
+        return entry.event.eventId;
+    return entry.runId;
+}
+function hasSignatureFields(entry) {
+    const maybe = entry;
+    return (typeof maybe.hash === 'string'
+        && typeof maybe.prevHash === 'string'
+        && typeof maybe.signature === 'string'
+        && typeof maybe.sequence === 'number');
+}
+function buildSignaturePayload(sequence, entryId, hash, prevHash) {
+    return `${sequence}|${entryId}|${hash}|${prevHash}`;
+}
+function computeSignature(key, sequence, entryId, hash, prevHash) {
+    return createHmac('sha256', key)
+        .update(buildSignaturePayload(sequence, entryId, hash, prevHash))
+        .digest('hex');
+}
+export function verifyChain(entries) {
+    if (entries.length === 0)
+        return { valid: true, hmacValid: true };
+    const key = ensureAuditKey();
+    let previousHash = null;
+    let inferredSequence = 0;
+    for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (!hasSignatureFields(entry)) {
+            continue;
+        }
+        const expectedPrevHash = previousHash ?? entry.prevHash;
+        const base = { ...entry };
+        delete base.hash;
+        delete base.signature;
+        const expectedHash = computeHash(base);
+        const sequence = entry.sequence ?? inferredSequence;
+        const expectedSignature = computeSignature(key, sequence, getEntryId(entry), expectedHash, expectedPrevHash);
+        const hashValid = entry.prevHash === expectedPrevHash && entry.hash === expectedHash;
+        const hmacValid = entry.signature === expectedSignature;
+        if (!hashValid || !hmacValid) {
+            return {
+                valid: hashValid,
+                hmacValid,
+                firstInvalidIndex: index,
+            };
+        }
+        previousHash = entry.hash;
+        inferredSequence += 1;
+    }
+    return { valid: true, hmacValid: true };
+}
 /**
  * Writes execution traces as JSONL to a local file.
  * Buffers records and flushes them to disk.
  */
 export class TraceRecorder {
+    key;
     buffer = [];
     outputPath;
+    sequence = 0;
+    lastHash = null;
     /**
      * @param outputPath - Path to the JSONL output file. Default: './fuze-traces.jsonl'.
      */
     constructor(outputPath = './fuze-traces.jsonl') {
         this.outputPath = outputPath;
+        this.key = ensureAuditKey();
+    }
+    appendSignedEntry(entry) {
+        const prevHash = this.lastHash ?? ZERO_HASH;
+        const sequence = this.sequence;
+        const entryId = getEntryId(entry);
+        const withChain = {
+            ...entry,
+            prevHash,
+            sequence,
+        };
+        const hash = computeHash(withChain);
+        const signature = computeSignature(this.key, sequence, entryId, hash, prevHash);
+        const signedEntry = {
+            ...withChain,
+            hash,
+            signature,
+        };
+        this.buffer.push(signedEntry);
+        this.lastHash = hash;
+        this.sequence += 1;
     }
     /**
      * Records the start of a run.
@@ -19,7 +139,7 @@ export class TraceRecorder {
      * @param config - The resolved configuration for this run.
      */
     startRun(runId, agentId, config) {
-        this.buffer.push({
+        this.appendSignedEntry({
             recordType: 'run_start',
             runId,
             agentId,
@@ -32,27 +152,25 @@ export class TraceRecorder {
      * @param step - The step record to log.
      */
     recordStep(step) {
-        this.buffer.push({ ...step, recordType: 'step' });
+        this.appendSignedEntry({ ...step, recordType: 'step' });
     }
     /**
-     * Records a guard event (loop detected, budget exceeded, etc.).
+     * Records a guard event (loop detected, timeout, etc.).
      * @param event - The guard event record to log.
      */
     recordGuardEvent(event) {
-        this.buffer.push({ recordType: 'guard_event', event });
+        this.appendSignedEntry({ recordType: 'guard_event', event });
     }
     /**
      * Records the end of a run.
      * @param runId - The run identifier.
      * @param status - Final status (e.g., 'completed', 'failed', 'killed').
-     * @param totalCost - Total USD cost of the run.
      */
-    endRun(runId, status, totalCost) {
-        this.buffer.push({
+    endRun(runId, status) {
+        this.appendSignedEntry({
             recordType: 'run_end',
             runId,
             status,
-            totalCost,
             timestamp: new Date().toISOString(),
         });
     }

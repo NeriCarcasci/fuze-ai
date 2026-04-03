@@ -1,6 +1,37 @@
-import type { StepCheckData, StepEndData, GuardEventData } from '../transports/types.js'
+/**
+ * Data for a pre-execution step check sent to the service.
+ */
+export interface StepCheckData {
+  stepId: string
+  stepNumber: number
+  toolName: string
+  argsHash: string
+  sideEffect: boolean
+}
 
-export type { StepCheckData, StepEndData, GuardEventData }
+/**
+ * Metadata sent after a step completes.
+ */
+export interface StepEndData {
+  toolName: string
+  stepNumber: number
+  argsHash: string
+  hasSideEffect: boolean
+  tokensIn: number
+  tokensOut: number
+  latencyMs: number
+  error?: string | null
+}
+
+/**
+ * A guard event (loop detected, timeout, etc.).
+ */
+export interface GuardEventData {
+  stepId?: string
+  eventType: string
+  severity: string
+  details: Record<string, unknown>
+}
 
 export interface ToolRegistration {
   name: string
@@ -9,34 +40,28 @@ export interface ToolRegistration {
   sideEffect: boolean
   defaults: {
     maxRetries: number
-    maxBudget: number
     timeout: number
   }
 }
 
 export interface ToolConfig {
   maxRetries: number
-  maxBudget: number
   timeout: number
   enabled: boolean
   updatedAt: string
 }
 
 /**
- * Unified service interface — bidirectional replacement for TelemetryTransport.
- *
- * In addition to sending telemetry (same as TelemetryTransport), FuzeService
- * also fetches tool configuration from the API/daemon. This allows the SDK to
- * apply remotely-configured budgets, retries, and timeouts without redeployment.
- *
+ * Unified service interface for runtime telemetry and remote tool configuration.
  * getToolConfig() is intentionally synchronous — it reads from an in-memory
  * cache so the agent's hot path is never blocked by a network call.
  */
 export interface FuzeService {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   connect(): Promise<boolean>
-  disconnect(): void
+  disconnect(): Promise<void>
   isConnected(): boolean
+  flush(): Promise<void>
 
   // ── Configuration ──────────────────────────────────────────────────────────
   /** Register tool metadata with the API/daemon at SDK boot time. Fire-and-forget. */
@@ -55,5 +80,5 @@ export interface FuzeService {
   sendStepStart(runId: string, step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'>
   sendStepEnd(runId: string, stepId: string, data: StepEndData): Promise<void>
   sendGuardEvent(runId: string, event: GuardEventData): Promise<void>
-  sendRunEnd(runId: string, status: string, totalCost: number): Promise<void>
+  sendRunEnd(runId: string, status: string): Promise<void>
 }

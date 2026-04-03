@@ -310,11 +310,19 @@ export class AuditStore {
             return 0;
         const ids = oldRuns.map((r) => r.run_id);
         const placeholders = ids.map(() => '?').join(',');
-        this.db.prepare(`DELETE FROM compensation_records WHERE run_id IN (${placeholders})`).run(...ids);
-        this.db.prepare(`DELETE FROM idempotency_keys WHERE run_id IN (${placeholders})`).run(...ids);
-        this.db.prepare(`DELETE FROM guard_events WHERE run_id IN (${placeholders})`).run(...ids);
-        this.db.prepare(`DELETE FROM steps WHERE run_id IN (${placeholders})`).run(...ids);
-        this.db.prepare(`DELETE FROM runs WHERE run_id IN (${placeholders})`).run(...ids);
+        this.db.exec('BEGIN');
+        try {
+            this.db.prepare(`DELETE FROM compensation_records WHERE run_id IN (${placeholders})`).run(...ids);
+            this.db.prepare(`DELETE FROM idempotency_keys WHERE run_id IN (${placeholders})`).run(...ids);
+            this.db.prepare(`DELETE FROM guard_events WHERE run_id IN (${placeholders})`).run(...ids);
+            this.db.prepare(`DELETE FROM steps WHERE run_id IN (${placeholders})`).run(...ids);
+            this.db.prepare(`DELETE FROM runs WHERE run_id IN (${placeholders})`).run(...ids);
+            this.db.exec('COMMIT');
+        }
+        catch (err) {
+            this.db.exec('ROLLBACK');
+            throw err;
+        }
         return ids.length;
     }
     // ── Compensation records ────────────────────────────────────────────────────

@@ -12,6 +12,8 @@ interface RunOutcome {
  * All analysis is in-memory; only aggregates are stored.
  */
 export class PatternAnalyser {
+  private static readonly MAX_AGENTS = 10_000
+  private static readonly EVICT_RATIO = 0.2
   private readonly outcomes = new Map<string, RunOutcome[]>()
 
   /** Minimum number of runs before emitting pattern alerts. */
@@ -33,10 +35,16 @@ export class PatternAnalyser {
     failedTool?: string,
     cost = 0,
   ): void {
-    if (!this.outcomes.has(agentId)) {
-      this.outcomes.set(agentId, [])
+    const existing = this.outcomes.get(agentId) ?? []
+    existing.push({ status, failedAtStep, failedTool, cost })
+
+    // Touch on write so map order approximates LRU semantics.
+    if (this.outcomes.has(agentId)) {
+      this.outcomes.delete(agentId)
     }
-    this.outcomes.get(agentId)!.push({ status, failedAtStep, failedTool, cost })
+    this.outcomes.set(agentId, existing)
+
+    this.evictOldAgentsIfNeeded()
   }
 
   /**
@@ -139,6 +147,17 @@ export class PatternAnalyser {
       successRate: successes / runs.length,
       avgCost,
       failureHotspot,
+    }
+  }
+
+  private evictOldAgentsIfNeeded(): void {
+    if (this.outcomes.size <= PatternAnalyser.MAX_AGENTS) return
+
+    const toEvict = Math.ceil(this.outcomes.size * PatternAnalyser.EVICT_RATIO)
+    for (let i = 0; i < toEvict; i++) {
+      const oldest = this.outcomes.keys().next()
+      if (oldest.done) break
+      this.outcomes.delete(oldest.value)
     }
   }
 }

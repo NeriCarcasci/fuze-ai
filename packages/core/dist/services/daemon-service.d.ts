@@ -19,8 +19,9 @@ export declare class DaemonService implements FuzeService {
     private _connected;
     constructor(socketPath?: string);
     connect(): Promise<boolean>;
-    disconnect(): void;
+    disconnect(): Promise<void>;
     isConnected(): boolean;
+    flush(): Promise<void>;
     registerTools(projectId: string, tools: ToolRegistration[]): Promise<void>;
     getToolConfig(toolName: string): ToolConfig | null;
     refreshConfig(): Promise<void>;
@@ -28,7 +29,7 @@ export declare class DaemonService implements FuzeService {
     sendStepStart(runId: string, step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'>;
     sendStepEnd(runId: string, stepId: string, data: StepEndData): Promise<void>;
     sendGuardEvent(runId: string, event: GuardEventData): Promise<void>;
-    sendRunEnd(runId: string, status: string, totalCost: number): Promise<void>;
+    sendRunEnd(runId: string, status: string): Promise<void>;
     private _connect;
     private _send;
     private _onMessage;

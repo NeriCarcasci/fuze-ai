@@ -24,6 +24,10 @@ export class IdempotencyManager {
         const record = await this.auditStore.getIdempotencyKey(key);
         return record !== null;
     }
+    /** Alias used by runtime handlers before executing a step. */
+    async check(key) {
+        return this.isDuplicate(key);
+    }
     /** Record a completed execution so future identical calls return the cache. */
     async recordExecution(key, runId, stepId, toolName, argsHash, result) {
         await this.auditStore.insertIdempotencyKey({

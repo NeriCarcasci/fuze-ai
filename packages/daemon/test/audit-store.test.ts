@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { AuditStore } from '../src/audit-store.js'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -190,5 +190,50 @@ describe('AuditStore', () => {
 
     const result = await store.verifyHashChain()
     expect(result.valid).toBe(true)
+  })
+
+  it('purgeOlderThan is atomic and rolls back when a delete fails', async () => {
+    const oldDate = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString()
+    await store.insertRun({
+      runId: 'old-run-atomic', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
+      status: 'completed', startedAt: oldDate,
+      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
+    })
+    await store.insertStep({
+      stepId: 's-atomic', runId: 'old-run-atomic', stepNumber: 1, startedAt: oldDate,
+      endedAt: oldDate, toolName: 'tool-atomic', argsHash: 'atomic',
+      hasSideEffect: 1, costUsd: 0, tokensIn: 0, tokensOut: 0, latencyMs: 0, error: null,
+    })
+    await store.insertGuardEvent({
+      eventId: 'e-atomic', runId: 'old-run-atomic', timestamp: oldDate,
+      eventType: 'loop_detected', severity: 'warning', detailsJson: '{}',
+    })
+    await store.insertCompensationRecord({
+      compensationId: 'comp-atomic', runId: 'old-run-atomic', stepId: 's-atomic', toolName: 'tool-atomic',
+      originalResultJson: null, compensationStatus: 'succeeded',
+      compensationStartedAt: oldDate, compensationEndedAt: oldDate, compensationError: null, escalated: false,
+    })
+    await store.insertIdempotencyKey({
+      keyHash: 'key-atomic', runId: 'old-run-atomic', stepId: 's-atomic',
+      toolName: 'tool-atomic', argsHash: 'atomic', createdAt: oldDate, resultJson: '{"ok":true}',
+    })
+
+    const internalDb = (store as unknown as { db: { prepare: (sql: string) => unknown } }).db
+    const originalPrepare = internalDb.prepare.bind(internalDb) as (sql: string) => unknown
+    const prepareSpy = vi.spyOn(internalDb, 'prepare').mockImplementation((sql: string) => {
+      if (sql.includes('DELETE FROM idempotency_keys')) {
+        throw new Error('simulated delete failure')
+      }
+      return originalPrepare(sql)
+    })
+
+    await expect(store.purgeOlderThan(90)).rejects.toThrow('simulated delete failure')
+    prepareSpy.mockRestore()
+
+    expect(await store.getRun('old-run-atomic')).not.toBeNull()
+    expect((await store.getRunSteps('old-run-atomic')).length).toBe(1)
+    expect((await store.getRunGuardEvents('old-run-atomic')).length).toBe(1)
+    expect((await store.getCompensationByRun('old-run-atomic')).length).toBe(1)
+    expect(await store.getIdempotencyKey('key-atomic')).not.toBeNull()
   })
 })

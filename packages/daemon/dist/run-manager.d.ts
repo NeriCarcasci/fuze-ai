@@ -7,6 +7,7 @@ export declare class RunManager {
     private static readonly MAX_ENDED;
     private readonly runs;
     private readonly endedRuns;
+    private trimEndedRuns;
     /**
      * Register a new run.
      *

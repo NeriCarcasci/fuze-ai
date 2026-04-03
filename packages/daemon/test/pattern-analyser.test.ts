@@ -77,5 +77,16 @@ describe('PatternAnalyser', () => {
       const r = pa.getAgentReliability('agent-b')
       expect(r.failureHotspot?.tool).toBe('toolX')
     })
+
+    it('evicts oldest 20% of agents when outcomes map exceeds 10,000', () => {
+      for (let i = 0; i < 10_001; i++) {
+        pa.recordRunOutcome(`agent-${i}`, 'completed')
+      }
+
+      // After exceeding 10k, oldest bucket should be evicted.
+      expect(pa.getAgentReliability('agent-0').totalRuns).toBe(0)
+      // Newer agents should remain.
+      expect(pa.getAgentReliability('agent-10000').totalRuns).toBe(1)
+    })
   })
 })

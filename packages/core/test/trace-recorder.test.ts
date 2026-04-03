@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { TraceRecorder } from '../src/trace-recorder.js'
-import { readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { TraceRecorder, verifyChain } from '../src/trace-recorder.js'
+import type { TraceEntry } from '../src/trace-recorder.js'
+import { readFileSync, unlinkSync, existsSync, mkdtempSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 
 const TEST_TRACE_FILE = join(process.cwd(), `test-trace-${Date.now()}.jsonl`)
 
@@ -14,6 +16,7 @@ describe('TraceRecorder', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     if (existsSync(TEST_TRACE_FILE)) {
       unlinkSync(TEST_TRACE_FILE)
     }
@@ -153,5 +156,219 @@ describe('TraceRecorder', () => {
   it('does nothing when flushing empty buffer', async () => {
     await recorder.flush()
     expect(existsSync(TEST_TRACE_FILE)).toBe(false)
+  })
+
+  it('creates hash chain and signature fields for each entry', async () => {
+    const runId = randomUUID()
+    recorder.startRun(runId, 'chain-agent', { timeout: 30000 })
+
+    for (let i = 1; i <= 3; i++) {
+      recorder.recordStep({
+        stepId: randomUUID(),
+        runId,
+        stepNumber: i,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        toolName: `tool-${i}`,
+        argsHash: 'chain-hash',
+        hasSideEffect: false,
+        costUsd: 0.01,
+        tokensIn: 10,
+        tokensOut: 5,
+        latencyMs: 20,
+      })
+    }
+
+    recorder.endRun(runId, 'completed', 0.03)
+    await recorder.flush()
+
+    const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { hash?: string; prevHash?: string; signature?: string })
+
+    expect(entries.length).toBe(5)
+    expect(entries[0].prevHash).toBe('0'.repeat(64))
+
+    for (let i = 0; i < entries.length; i++) {
+      expect(entries[i].hash).toMatch(/^[a-f0-9]{64}$/)
+      expect(entries[i].prevHash).toMatch(/^[a-f0-9]{64}$/)
+      expect(entries[i].signature).toMatch(/^[a-f0-9]{64}$/)
+      if (i > 0) {
+        expect(entries[i].prevHash).toBe(entries[i - 1].hash)
+      }
+    }
+  })
+
+  it('detects data tampering via hash verification', async () => {
+    const runId = randomUUID()
+    recorder.startRun(runId, 'tamper-agent', {})
+    for (let i = 0; i < 8; i++) {
+      recorder.recordStep({
+        stepId: randomUUID(),
+        runId,
+        stepNumber: i + 1,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        toolName: `tool-${i + 1}`,
+        argsHash: 'hash',
+        hasSideEffect: false,
+        costUsd: 0.01,
+        tokensIn: 10,
+        tokensOut: 5,
+        latencyMs: 10,
+      })
+    }
+    recorder.endRun(runId, 'completed', 0.08)
+    await recorder.flush()
+
+    const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+
+    entries[5].toolName = 'tampered-tool-name'
+    const result = verifyChain(entries as TraceEntry[])
+
+    expect(result.valid).toBe(false)
+    expect(result.firstInvalidIndex).toBe(5)
+  })
+
+  it('detects HMAC tampering while hash chain remains valid', async () => {
+    const runId = randomUUID()
+    recorder.startRun(runId, 'sig-agent', {})
+    for (let i = 0; i < 8; i++) {
+      recorder.recordStep({
+        stepId: randomUUID(),
+        runId,
+        stepNumber: i + 1,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        toolName: `tool-${i + 1}`,
+        argsHash: 'hash',
+        hasSideEffect: false,
+        costUsd: 0.01,
+        tokensIn: 10,
+        tokensOut: 5,
+        latencyMs: 10,
+      })
+    }
+    recorder.endRun(runId, 'completed', 0.08)
+    await recorder.flush()
+
+    const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+
+    entries[5].signature = 'f'.repeat(64)
+    const result = verifyChain(entries as TraceEntry[])
+
+    expect(result.valid).toBe(true)
+    expect(result.hmacValid).toBe(false)
+    expect(result.firstInvalidIndex).toBe(5)
+  })
+
+  it('skips legacy entries without hash/signature and verifies signed entries', async () => {
+    const runId = randomUUID()
+    recorder.startRun(runId, 'legacy-agent', {})
+    for (let i = 0; i < 8; i++) {
+      recorder.recordStep({
+        stepId: randomUUID(),
+        runId,
+        stepNumber: i + 1,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        toolName: `tool-${i + 1}`,
+        argsHash: 'hash',
+        hasSideEffect: false,
+        costUsd: 0.01,
+        tokensIn: 10,
+        tokensOut: 5,
+        latencyMs: 10,
+      })
+    }
+    recorder.endRun(runId, 'completed', 0.08)
+    await recorder.flush()
+
+    const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+
+    for (let i = 0; i < 5; i++) {
+      delete entries[i].hash
+      delete entries[i].prevHash
+      delete entries[i].signature
+      delete entries[i].sequence
+    }
+
+    expect(verifyChain(entries as TraceEntry[])).toEqual({ valid: true, hmacValid: true })
+  })
+
+  it('creates ~/.fuze/audit.key with 32 bytes and secure permissions', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'fuze-home-'))
+    const keyPath = join(fakeHome, '.fuze', 'audit.key')
+    const previousPath = process.env['FUZE_AUDIT_KEY_PATH']
+    process.env['FUZE_AUDIT_KEY_PATH'] = keyPath
+    try {
+      const localRecorder = new TraceRecorder(TEST_TRACE_FILE)
+      localRecorder.startRun(randomUUID(), 'key-agent', {})
+      expect(existsSync(keyPath)).toBe(true)
+      const stats = statSync(keyPath)
+      expect(stats.size).toBe(32)
+      if (process.platform !== 'win32') {
+        expect(stats.mode & 0o777).toBe(0o600)
+      }
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true })
+      if (previousPath) {
+        process.env['FUZE_AUDIT_KEY_PATH'] = previousPath
+      } else {
+        delete process.env['FUZE_AUDIT_KEY_PATH']
+      }
+    }
+  })
+
+  it('reuses the same key across TraceRecorder instances', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'fuze-home-'))
+    const keyPath = join(fakeHome, '.fuze', 'audit.key')
+    const previousPath = process.env['FUZE_AUDIT_KEY_PATH']
+    process.env['FUZE_AUDIT_KEY_PATH'] = keyPath
+    try {
+      const runId = 'same-run'
+      const stepTemplate = {
+        stepId: 'same-step',
+        runId,
+        stepNumber: 1,
+        startedAt: '2026-01-01T00:00:00.000Z',
+        endedAt: '2026-01-01T00:00:00.100Z',
+        toolName: 'same-tool',
+        argsHash: 'same-args',
+        hasSideEffect: false,
+        costUsd: 0.01,
+        tokensIn: 10,
+        tokensOut: 5,
+        latencyMs: 10,
+      }
+
+      const recorderA = new TraceRecorder(TEST_TRACE_FILE)
+      recorderA.recordStep(stepTemplate)
+      const sigA = recorderA.getBuffer()[0]?.signature
+
+      const recorderB = new TraceRecorder(TEST_TRACE_FILE)
+      recorderB.recordStep(stepTemplate)
+      const sigB = recorderB.getBuffer()[0]?.signature
+
+      expect(sigA).toBeDefined()
+      expect(sigA).toBe(sigB)
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true })
+      if (previousPath) {
+        process.env['FUZE_AUDIT_KEY_PATH'] = previousPath
+      } else {
+        delete process.env['FUZE_AUDIT_KEY_PATH']
+      }
+    }
   })
 })

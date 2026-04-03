@@ -26,7 +26,7 @@ export declare class LoopDetector {
     /**
      * Called after result analysis. Checks Layer 3 (no-progress detection).
      * @param hasNewSignal - Whether the step produced novel output.
-     * @returns A LoopSignal if too many steps without progress, or null.
+     * @returns A LoopSignal when no-progress threshold is exceeded, or null.
      */
     onProgress(hasNewSignal: boolean): LoopSignal | null;
     /**

@@ -10,8 +10,12 @@ export { NoopService } from './noop-service.js';
  */
 export function createService(config) {
     const apiKey = config.cloud?.apiKey ?? process.env['FUZE_API_KEY'];
-    if (apiKey)
-        return new ApiService(apiKey, config.cloud?.endpoint);
+    if (apiKey) {
+        return new ApiService(apiKey, {
+            endpoint: config.cloud?.endpoint,
+            flushIntervalMs: config.cloud?.flushIntervalMs,
+        });
+    }
     if (config.daemon?.enabled)
         return new DaemonService(config.daemon?.socketPath);
     return new NoopService();

@@ -5,6 +5,8 @@ const REQUIRED_FIELDS = {
     step_start: ['runId', 'stepId', 'stepNumber', 'toolName', 'argsHash'],
     step_end: ['runId', 'stepId', 'costUsd', 'tokensIn', 'tokensOut', 'latencyMs'],
     guard_event: ['runId', 'eventType', 'severity'],
+    register_tools: ['projectId', 'tools'],
+    get_config: [],
 };
 const KNOWN_TYPES = new Set(Object.keys(REQUIRED_FIELDS));
 /**

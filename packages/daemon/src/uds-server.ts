@@ -8,6 +8,7 @@ import type { AuditStore } from './audit-store.js'
 import type { AlertManager } from './alert-manager.js'
 import type { SDKMessage } from './protocol.js'
 import type { ConfigCache } from './config-cache.js'
+import type { IdempotencyManager } from './compensation/idempotency.js'
 
 export interface UDSServerDeps {
   runManager: RunManager
@@ -15,6 +16,7 @@ export interface UDSServerDeps {
   patternAnalyser: PatternAnalyser
   auditStore: AuditStore
   alertManager: AlertManager
+  idempotencyManager?: IdempotencyManager
   /** Optional — provides tool config responses to the SDK. */
   configCache?: ConfigCache
 }
@@ -25,7 +27,11 @@ interface PendingStep {
   argsHash: string
   sideEffect: boolean
   startedAt: string
+  idempotencyKey?: string
 }
+
+const MAX_BUFFER_BYTES = 1_048_576
+const DISPATCH_TIMEOUT_MS = 30_000
 
 /**
  * Unix Domain Socket server for SDK ↔ Daemon communication.
@@ -94,6 +100,12 @@ export class UDSServer {
 
     socket.on('data', (chunk: Buffer) => {
       buf += chunk.toString('utf8')
+      if (Buffer.byteLength(buf, 'utf8') > MAX_BUFFER_BYTES) {
+        process.stderr.write('[fuze-daemon] Warning: closing socket due to oversized UDS message buffer (>1MB)\n')
+        socket.destroy()
+        return
+      }
+
       const lines = buf.split('\n')
       buf = lines.pop() ?? '' // keep partial last line
 
@@ -129,7 +141,7 @@ export class UDSServer {
     }
 
     // Dispatch and write response (async, fire-and-forget; errors caught internally)
-    this._dispatch(msg).then(
+    this._dispatchWithTimeout(msg).then(
       (response) => {
         if (response !== null) {
           try {
@@ -148,6 +160,32 @@ export class UDSServer {
         })
       },
     )
+  }
+
+  private async _dispatchWithTimeout(msg: SDKMessage): Promise<import('./protocol.js').DaemonResponse | null> {
+    let timeout: NodeJS.Timeout | undefined
+    const timeoutPromise = new Promise<import('./protocol.js').DaemonResponse>((resolve) => {
+      timeout = setTimeout(() => {
+        resolve({ type: 'error', message: 'dispatch_timeout' })
+      }, DISPATCH_TIMEOUT_MS)
+    })
+
+    const response = await Promise.race([
+      this._dispatch(msg),
+      timeoutPromise,
+    ])
+
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+
+    if (response !== null && response.type === 'error' && response.message === 'dispatch_timeout') {
+      process.stderr.write(
+        `[fuze-daemon] Warning: dispatch timed out after ${DISPATCH_TIMEOUT_MS}ms for message type '${msg.type}'\n`,
+      )
+    }
+
+    return response
   }
 
   private async _dispatch(msg: SDKMessage): Promise<import('./protocol.js').DaemonResponse | null> {
@@ -191,7 +229,7 @@ export class UDSServer {
           patternAnalyser.recordRunOutcome(
             run.agentId,
             msg.status,
-            lastFailedStep?.toolName,
+            lastFailedStep?.stepId,
             msg.status !== 'completed' ? lastFailedStep?.toolName : undefined,
             msg.totalCost,
           )
@@ -226,12 +264,22 @@ export class UDSServer {
         }
 
         // Buffer step metadata for later use in step_end
+        const idempotencyKey = this.deps.idempotencyManager?.generateKey(
+          msg.runId,
+          msg.toolName,
+          msg.argsHash,
+        )
+        if (idempotencyKey && await this.deps.idempotencyManager?.check(idempotencyKey)) {
+          return { type: 'retry', context: 'duplicate_step' }
+        }
+
         this.pendingSteps.set(msg.stepId, {
           stepNumber: msg.stepNumber,
           toolName: msg.toolName,
           argsHash: msg.argsHash,
           sideEffect: msg.sideEffect,
           startedAt: new Date().toISOString(),
+          idempotencyKey,
         })
 
         return PROCEED
@@ -268,6 +316,23 @@ export class UDSServer {
             startedAt: pending.startedAt,
             costUsd: msg.costUsd,
           })
+        }
+
+        if (pending?.idempotencyKey) {
+          await this.deps.idempotencyManager?.recordExecution(
+            pending.idempotencyKey,
+            msg.runId,
+            msg.stepId,
+            pending.toolName,
+            pending.argsHash,
+            {
+              costUsd: msg.costUsd,
+              tokensIn: msg.tokensIn,
+              tokensOut: msg.tokensOut,
+              latencyMs: msg.latencyMs,
+              error: msg.error ?? null,
+            },
+          )
         }
 
         // Persist step to audit store

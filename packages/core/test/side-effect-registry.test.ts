@@ -80,4 +80,68 @@ describe('SideEffectRegistry', () => {
     expect(results[0].escalated).toBe(true)
     expect(results[0].error).toBe('compensation failed')
   })
+
+  it('captures compensation end timestamp after async compensation completes', async () => {
+    const registry = new SideEffectRegistry()
+    registry.registerCompensation('slowCompensation', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    registry.recordSideEffect('step-1', 'slowCompensation', { id: 'payload-1' })
+
+    const results = await registry.rollback('step-1')
+
+    expect(results).toHaveLength(1)
+    const result = results[0]
+    expect(result.compensationStartedAt).toBeDefined()
+    expect(result.compensationEndedAt).toBeDefined()
+
+    const started = Date.parse(result.compensationStartedAt as string)
+    const ended = Date.parse(result.compensationEndedAt as string)
+    expect(ended - started).toBeGreaterThanOrEqual(200)
+    expect(result.compensationLatencyMs).toBeGreaterThanOrEqual(200)
+  })
+
+  it('captures compensation end timestamp and error when compensation throws', async () => {
+    const registry = new SideEffectRegistry()
+    registry.registerCompensation('failingCompensation', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      throw new Error('rollback exploded')
+    })
+    registry.recordSideEffect('step-1', 'failingCompensation', { id: 'payload-1' })
+
+    const results = await registry.rollback('step-1')
+
+    expect(results).toHaveLength(1)
+    const result = results[0]
+    expect(result.status).toBe('failed')
+    expect(result.error).toBe('rollback exploded')
+    expect(result.compensationStartedAt).toBeDefined()
+    expect(result.compensationEndedAt).toBeDefined()
+
+    const started = Date.parse(result.compensationStartedAt as string)
+    const ended = Date.parse(result.compensationEndedAt as string)
+    expect(ended - started).toBeGreaterThanOrEqual(100)
+  })
+
+  it('serializes concurrent rollbacks to preserve deterministic compensation order', async () => {
+    const registry = new SideEffectRegistry()
+    let inFlight = 0
+    let maxInFlight = 0
+
+    registry.registerCompensation('serialComp', async () => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      inFlight -= 1
+    })
+    registry.recordSideEffect('step-1', 'serialComp', { id: 1 })
+    registry.recordSideEffect('step-2', 'serialComp', { id: 2 })
+
+    await Promise.all([
+      registry.rollback('step-1'),
+      registry.rollback('step-1'),
+    ])
+
+    expect(maxInFlight).toBe(1)
+  })
 })

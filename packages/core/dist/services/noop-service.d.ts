@@ -6,8 +6,9 @@ import type { FuzeService, ToolRegistration, ToolConfig, StepCheckData, StepEndD
  */
 export declare class NoopService implements FuzeService {
     connect(): Promise<boolean>;
-    disconnect(): void;
+    disconnect(): Promise<void>;
     isConnected(): boolean;
+    flush(): Promise<void>;
     registerTools(_projectId: string, _tools: ToolRegistration[]): Promise<void>;
     getToolConfig(_toolName: string): ToolConfig | null;
     refreshConfig(): Promise<void>;
@@ -15,6 +16,6 @@ export declare class NoopService implements FuzeService {
     sendStepStart(_runId: string, _step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'>;
     sendStepEnd(_runId: string, _stepId: string, _data: StepEndData): Promise<void>;
     sendGuardEvent(_runId: string, _event: GuardEventData): Promise<void>;
-    sendRunEnd(_runId: string, _status: string, _totalCost: number): Promise<void>;
+    sendRunEnd(_runId: string, _status: string): Promise<void>;
 }
 //# sourceMappingURL=noop-service.d.ts.map

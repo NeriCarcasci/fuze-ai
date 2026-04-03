@@ -1,4 +1,22 @@
 /** JSON-over-newline protocol for SDK ↔ Daemon communication. */
+export interface ToolRegistration {
+    name: string;
+    description?: string;
+    schema?: object;
+    sideEffect: boolean;
+    defaults: {
+        maxRetries: number;
+        maxBudget: number;
+        timeout: number;
+    };
+}
+export interface ToolConfig {
+    maxRetries: number;
+    maxBudget: number;
+    timeout: number;
+    enabled: boolean;
+    updatedAt: string;
+}
 export interface RunStartMessage {
     type: 'run_start';
     runId: string;
@@ -41,7 +59,16 @@ export interface GuardEventMessage {
     severity: 'warning' | 'action' | 'critical';
     details: Record<string, unknown>;
 }
-export type SDKMessage = RunStartMessage | RunEndMessage | StepStartMessage | StepEndMessage | GuardEventMessage;
+export interface RegisterToolsMessage {
+    type: 'register_tools';
+    projectId: string;
+    tools: ToolRegistration[];
+}
+export interface GetConfigMessage {
+    type: 'get_config';
+    toolName?: string;
+}
+export type SDKMessage = RunStartMessage | RunEndMessage | StepStartMessage | StepEndMessage | GuardEventMessage | RegisterToolsMessage | GetConfigMessage;
 export interface ProceedResponse {
     type: 'proceed';
 }
@@ -59,7 +86,15 @@ export interface RetryResponse {
     type: 'retry';
     context: string;
 }
-export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse;
+export interface ConfigResponse {
+    type: 'config';
+    tools: Record<string, ToolConfig>;
+}
+export interface ErrorResponse {
+    type: 'error';
+    message: string;
+}
+export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | RetryResponse | ConfigResponse | ErrorResponse;
 /**
  * Parse a raw JSON string into a typed SDKMessage.
  *

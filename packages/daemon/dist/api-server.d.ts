@@ -31,8 +31,6 @@ export interface APIServerDeps {
  * WebSocket:
  *   ws://host/ws                          — live alerts stream
  *
- * Static files:
- *   GET  /                                — dashboard SPA (fallback to index.html)
  */
 export declare class APIServer {
     private readonly port;
@@ -58,7 +56,6 @@ export declare class APIServer {
     private _handleComplianceReport;
     private _handleBudget;
     private _handleAgentHealth;
-    private _serveStatic;
     private _onWsConnection;
     private _json;
     private _readBody;

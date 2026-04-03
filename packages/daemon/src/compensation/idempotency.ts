@@ -27,6 +27,11 @@ export class IdempotencyManager {
     return record !== null
   }
 
+  /** Alias used by runtime handlers before executing a step. */
+  async check(key: string): Promise<boolean> {
+    return this.isDuplicate(key)
+  }
+
   /** Record a completed execution so future identical calls return the cache. */
   async recordExecution(
     key: string,

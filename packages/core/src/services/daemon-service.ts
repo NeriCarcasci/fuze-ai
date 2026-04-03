@@ -54,7 +54,7 @@ export class DaemonService implements FuzeService {
     return this._connected
   }
 
-  disconnect(): void {
+  async disconnect(): Promise<void> {
     this._closed = true
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer)
     if (this._socket) { this._socket.destroy(); this._socket = null }
@@ -62,6 +62,7 @@ export class DaemonService implements FuzeService {
   }
 
   isConnected(): boolean { return this._connected }
+  async flush(): Promise<void> {}
 
   // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -152,8 +153,8 @@ export class DaemonService implements FuzeService {
     })
   }
 
-  async sendRunEnd(runId: string, status: string, totalCost: number): Promise<void> {
-    this._send({ type: 'run_end', runId, status, totalCost })
+  async sendRunEnd(runId: string, status: string): Promise<void> {
+    this._send({ type: 'run_end', runId, status })
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -221,6 +222,12 @@ export class DaemonService implements FuzeService {
         else resolve('proceed')
       }
     } catch {
+      if (this._pendingConfig) {
+        const { resolve, timer } = this._pendingConfig
+        this._pendingConfig = null
+        clearTimeout(timer)
+        resolve({})
+      }
       this._resolvePendingStepWithProceed()
     }
   }
@@ -235,9 +242,10 @@ export class DaemonService implements FuzeService {
 
   private _scheduleReconnect(): void {
     if (this._closed) return
+    const delay = this._reconnectMs
+    this._reconnectMs = Math.min(this._reconnectMs * 2, RECONNECT_MAX_MS)
     this._reconnectTimer = setTimeout(() => {
-      this._reconnectMs = Math.min(this._reconnectMs * 2, RECONNECT_MAX_MS)
       this._connect()
-    }, this._reconnectMs)
+    }, delay)
   }
 }

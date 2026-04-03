@@ -5,6 +5,7 @@
 export class SideEffectRegistry {
     compensations = new Map();
     sideEffects = [];
+    rollbackTail = Promise.resolve();
     /**
      * Register a compensation function for a tool name.
      * @param toolName - The name of the tool/function.
@@ -34,46 +35,16 @@ export class SideEffectRegistry {
      * @returns An array of compensation results.
      */
     async rollback(fromStepId) {
-        const results = [];
-        // Find the index of the step to roll back from
-        const startIdx = this.sideEffects.findIndex((e) => e.stepId === fromStepId);
-        if (startIdx === -1) {
-            // If stepId not found, roll back all side-effects
-            return this.rollbackAll();
-        }
-        // Process in reverse order from the specified step
-        const toRollback = this.sideEffects.slice(startIdx).reverse();
-        for (const entry of toRollback) {
-            const compensateFn = this.compensations.get(entry.toolName);
-            if (!compensateFn) {
-                results.push({
-                    stepId: entry.stepId,
-                    toolName: entry.toolName,
-                    status: 'no_compensation',
-                    escalated: true,
-                });
-                continue;
+        return this.withRollbackLock(async () => {
+            const startIdx = this.sideEffects.findIndex((e) => e.stepId === fromStepId);
+            if (startIdx === -1) {
+                // If stepId not found, roll back all side-effects
+                return this.rollbackAll();
             }
-            try {
-                await compensateFn(entry.result);
-                results.push({
-                    stepId: entry.stepId,
-                    toolName: entry.toolName,
-                    status: 'compensated',
-                    escalated: false,
-                });
-            }
-            catch (err) {
-                results.push({
-                    stepId: entry.stepId,
-                    toolName: entry.toolName,
-                    status: 'failed',
-                    escalated: true,
-                    error: err instanceof Error ? err.message : String(err),
-                });
-            }
-        }
-        return results;
+            // Process in reverse order from the specified step
+            const toRollback = this.sideEffects.slice(startIdx).reverse();
+            return this.rollbackEntries(toRollback);
+        });
     }
     /**
      * Check if a tool is marked as having side-effects (has a compensation registered).
@@ -90,9 +61,12 @@ export class SideEffectRegistry {
         return this.sideEffects;
     }
     async rollbackAll() {
-        const results = [];
         const reversed = [...this.sideEffects].reverse();
-        for (const entry of reversed) {
+        return this.rollbackEntries(reversed);
+    }
+    async rollbackEntries(entries) {
+        const results = [];
+        for (const entry of entries) {
             const compensateFn = this.compensations.get(entry.toolName);
             if (!compensateFn) {
                 results.push({
@@ -103,26 +77,48 @@ export class SideEffectRegistry {
                 });
                 continue;
             }
+            const startEpochMs = Date.now();
+            const compensationStartedAt = new Date(startEpochMs).toISOString();
+            let status = 'compensated';
+            let escalated = false;
+            let error;
             try {
                 await compensateFn(entry.result);
-                results.push({
-                    stepId: entry.stepId,
-                    toolName: entry.toolName,
-                    status: 'compensated',
-                    escalated: false,
-                });
             }
             catch (err) {
+                status = 'failed';
+                escalated = true;
+                error = err instanceof Error ? err.message : String(err);
+            }
+            finally {
+                const endEpochMs = Date.now();
                 results.push({
                     stepId: entry.stepId,
                     toolName: entry.toolName,
-                    status: 'failed',
-                    escalated: true,
-                    error: err instanceof Error ? err.message : String(err),
+                    status,
+                    escalated,
+                    error,
+                    compensationStartedAt,
+                    compensationEndedAt: new Date(endEpochMs).toISOString(),
+                    compensationLatencyMs: endEpochMs - startEpochMs,
                 });
             }
         }
         return results;
+    }
+    async withRollbackLock(operation) {
+        const previous = this.rollbackTail;
+        let release = () => undefined;
+        this.rollbackTail = new Promise((resolve) => {
+            release = () => resolve();
+        });
+        await previous;
+        try {
+            return await operation();
+        }
+        finally {
+            release();
+        }
     }
 }
 //# sourceMappingURL=side-effect-registry.js.map

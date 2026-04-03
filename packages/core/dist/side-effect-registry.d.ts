@@ -6,6 +6,7 @@ import type { CompensationResult, SideEffectEntry } from './types.js';
 export declare class SideEffectRegistry {
     private compensations;
     private sideEffects;
+    private rollbackTail;
     /**
      * Register a compensation function for a tool name.
      * @param toolName - The name of the tool/function.
@@ -37,5 +38,7 @@ export declare class SideEffectRegistry {
      */
     getEffects(): readonly SideEffectEntry[];
     private rollbackAll;
+    private rollbackEntries;
+    private withRollbackLock;
 }
 //# sourceMappingURL=side-effect-registry.d.ts.map

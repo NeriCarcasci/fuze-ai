@@ -6,10 +6,6 @@ export interface GuardOptions {
   maxRetries?: number
   /** Kill after this duration in ms. Default: 30000. */
   timeout?: number
-  /** Max USD cost for this step. Default: from config. */
-  maxCost?: number
-  /** Max tokens for this step. */
-  maxTokens?: number
   /** Hard iteration cap for the run. Default: 25. */
   maxIterations?: number
   /** If true, Fuze won't auto-retry this function. Default: false. */
@@ -18,23 +14,13 @@ export interface GuardOptions {
   compensate?: (...args: unknown[]) => unknown | Promise<unknown>
   /** What to do on loop detection. Default: 'kill'. */
   onLoop?: 'kill' | 'warn' | 'skip'
-  /** Model identifier for cost estimation (e.g., 'openai/gpt-4o'). */
-  model?: string
+  /** Per-call loop detection overrides. */
+  loopDetection?: Partial<ResolvedOptions['loopDetection']>
   /**
    * Custom extractor called on the return value to read actual token usage.
-   * Overrides auto-detection for all providers. Return null to fall back to pre-flight estimate.
+   * Overrides auto-detection for all providers. Return null to skip extraction.
    */
-  costExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
-  /**
-   * @deprecated Fuze now reads usage from the response automatically.
-   * Still honoured as a pre-flight budget check when auto-extraction is unavailable.
-   */
-  estimatedTokensIn?: number
-  /**
-   * @deprecated Fuze now reads usage from the response automatically.
-   * Still honoured as a pre-flight budget check when auto-extraction is unavailable.
-   */
-  estimatedTokensOut?: number
+  usageExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
 }
 
 /**
@@ -44,8 +30,6 @@ export interface FuzeConfig {
   defaults?: {
     maxRetries?: number
     timeout?: number
-    maxCostPerStep?: number
-    maxCostPerRun?: number
     maxIterations?: number
     onLoop?: 'kill' | 'warn' | 'skip'
     traceOutput?: string
@@ -54,16 +38,13 @@ export interface FuzeConfig {
     windowSize?: number
     repeatThreshold?: number
     maxFlatSteps?: number
-    costVelocityWindow?: number
-    costVelocityThreshold?: number
   }
-  providers?: Record<string, { input: number; output: number }>
   /**
-   * Global cost extractor applied to all guarded functions.
-   * Per-guard `costExtractor` takes precedence when both are set.
+   * Global usage extractor applied to all guarded functions.
+   * Per-guard `usageExtractor` takes precedence when both are set.
    */
-  costExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
-  /** Connect to the Fuze daemon for global budget enforcement and live dashboard. */
+  usageExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
+  /** Connect to the Fuze daemon for live dashboard. */
   daemon?: {
     enabled?: boolean
     /** UDS socket path or Windows named pipe. Defaults to platform default. */
@@ -79,6 +60,8 @@ export interface FuzeConfig {
     apiKey?: string
     /** Override the default cloud endpoint. Defaults to https://api.fuze-ai.tech */
     endpoint?: string
+    /** Flush cadence for telemetry batches in milliseconds. Minimum 1000ms. */
+    flushIntervalMs?: number
   }
   /** Project settings for tool registration. Can also be set via FUZE_PROJECT_ID env var. */
   project?: {
@@ -92,23 +75,16 @@ export interface FuzeConfig {
 export interface ResolvedOptions {
   maxRetries: number
   timeout: number
-  maxCostPerStep: number
-  maxCostPerRun: number
   maxIterations: number
   onLoop: 'kill' | 'warn' | 'skip'
   traceOutput: string
   sideEffect: boolean
   compensate?: (...args: unknown[]) => unknown | Promise<unknown>
-  model?: string
-  costExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
-  estimatedTokensIn?: number
-  estimatedTokensOut?: number
+  usageExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
   loopDetection: {
     windowSize: number
     repeatThreshold: number
     maxFlatSteps: number
-    costVelocityWindow: number
-    costVelocityThreshold: number
   }
 }
 
@@ -124,7 +100,6 @@ export interface StepRecord {
   toolName: string
   argsHash: string
   hasSideEffect: boolean
-  costUsd: number
   tokensIn: number
   tokensOut: number
   latencyMs: number
@@ -132,14 +107,14 @@ export interface StepRecord {
 }
 
 /**
- * Record of a guard event (loop detected, budget exceeded, etc.).
+ * Record of a guard event (loop detected, timeout, etc.).
  */
 export interface GuardEventRecord {
   eventId: string
   runId: string
   stepId?: string
   timestamp: string
-  type: 'loop_detected' | 'budget_exceeded' | 'timeout' | 'kill' | 'side_effect_blocked'
+  type: 'loop_detected' | 'timeout' | 'kill' | 'side_effect_blocked' | 'retry'
   severity: 'warning' | 'action' | 'critical'
   details: Record<string, unknown>
 }
@@ -148,7 +123,7 @@ export interface GuardEventRecord {
  * Signal emitted by the loop detector when a loop is detected.
  */
 export interface LoopSignal {
-  type: 'max_iterations' | 'repeated_tool' | 'no_progress' | 'cost_velocity'
+  type: 'max_iterations' | 'repeated_tool' | 'no_progress'
   details: Record<string, unknown>
 }
 
@@ -161,6 +136,9 @@ export interface CompensationResult {
   status: 'compensated' | 'no_compensation' | 'failed'
   escalated: boolean
   error?: string
+  compensationStartedAt?: string
+  compensationEndedAt?: string
+  compensationLatencyMs?: number
 }
 
 /**
@@ -174,10 +152,9 @@ export interface SideEffectEntry {
 }
 
 /**
- * Budget status returned by BudgetTracker.getStatus().
+ * Usage status returned by UsageTracker.getStatus().
  */
-export interface BudgetStatus {
-  totalCost: number
+export interface UsageStatus {
   totalTokensIn: number
   totalTokensOut: number
   stepCount: number
@@ -191,8 +168,6 @@ export interface LoopDetectorConfig {
   windowSize: number
   repeatThreshold: number
   maxFlatSteps: number
-  costVelocityWindow: number
-  costVelocityThreshold: number
 }
 
 /**
@@ -209,7 +184,7 @@ export interface DaemonResponse {
 export interface RunContext {
   runId: string
   guard: <T extends (...args: unknown[]) => unknown>(fn: T, options?: GuardOptions) => T
-  getStatus: () => BudgetStatus
+  getStatus: () => UsageStatus
   end: (status?: string) => Promise<void>
 }
 
@@ -219,8 +194,6 @@ export interface RunContext {
 export const DEFAULTS: ResolvedOptions = {
   maxRetries: 3,
   timeout: 30000,
-  maxCostPerStep: Infinity,
-  maxCostPerRun: Infinity,
   maxIterations: 25,
   onLoop: 'kill',
   traceOutput: './fuze-traces.jsonl',
@@ -229,7 +202,5 @@ export const DEFAULTS: ResolvedOptions = {
     windowSize: 5,
     repeatThreshold: 3,
     maxFlatSteps: 4,
-    costVelocityWindow: 60,
-    costVelocityThreshold: 1.0,
   },
 }

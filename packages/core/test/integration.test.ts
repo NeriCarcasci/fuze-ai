@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { guard, createRun, configure, resetConfig } from '../src/index.js'
-import { BudgetExceeded, LoopDetected } from '../src/errors.js'
+import { GuardTimeout, LoopDetected } from '../src/errors.js'
 import { ConfigLoader } from '../src/config-loader.js'
-import { readFileSync, unlinkSync, existsSync, writeFileSync } from 'node:fs'
+import { readFileSync, unlinkSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const TRACE_FILE = join(process.cwd(), `integration-trace-${Date.now()}.jsonl`)
 
@@ -49,32 +50,6 @@ describe('Integration', () => {
     const records = lines.map((l) => JSON.parse(l))
     expect(records[0].recordType).toBe('run_start')
     expect(records[records.length - 1].recordType).toBe('run_end')
-  })
-
-  it('guarded function exceeds budget and throws before execution', async () => {
-    configure({
-      defaults: {
-        traceOutput: TRACE_FILE,
-        maxCostPerRun: 0.10,
-      },
-    })
-
-    const run = createRun('budget-test')
-
-    const expensive = run.guard(
-      async function expensive() {
-        return 'should not run'
-      },
-      {
-        model: 'openai/gpt-4o',
-        estimatedTokensIn: 100000,
-        estimatedTokensOut: 50000,
-      },
-    )
-
-    // Estimated cost: 100000 * 0.0000025 + 50000 * 0.00001 = 0.25 + 0.50 = 0.75
-    // Run ceiling is 0.10, so this should throw
-    await expect(expensive()).rejects.toThrow(BudgetExceeded)
   })
 
   it('guarded function loops and is killed', async () => {
@@ -179,5 +154,47 @@ timeout = 99000
 
     expect(resolved.maxRetries).toBe(1)
     expect(resolved.timeout).toBe(1000)
+  })
+
+  it('deep-merges configured defaults with fuze.toml defaults', async () => {
+    const originalCwd = process.cwd()
+    const tempDir = mkdtempSync(join(tmpdir(), 'fuze-merge-test-'))
+
+    writeFileSync(
+      join(tempDir, 'fuze.toml'),
+      `
+[defaults]
+maxIterations = 2
+timeout = 5000
+`,
+      'utf-8',
+    )
+
+    try {
+      process.chdir(tempDir)
+      resetConfig()
+      configure({ defaults: { timeout: 20 } })
+
+      const iterationRun = createRun('merge-iterations')
+      const step = iterationRun.guard(async function step(n: unknown) {
+        return n
+      })
+
+      await step(1)
+      await step(2)
+      await expect(step(3)).rejects.toThrow(LoopDetected)
+
+      const timeoutRun = createRun('merge-timeout')
+      const slow = timeoutRun.guard(async function slowStep() {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        return 'done'
+      })
+
+      await expect(slow()).rejects.toThrow(GuardTimeout)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(tempDir, { recursive: true, force: true })
+      resetConfig()
+    }
   })
 })

@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "medicore",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--prefix", "D:\\medicore"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "cloud-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:\\fuze-dashboard\\cloud-dashboard"],
+      "port": 5173
+    }
+  ]
+}

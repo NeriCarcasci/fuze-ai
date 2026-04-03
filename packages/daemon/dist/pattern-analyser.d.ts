@@ -4,6 +4,8 @@ import type { AgentReliability, PatternAlert } from './types.js';
  * All analysis is in-memory; only aggregates are stored.
  */
 export declare class PatternAnalyser {
+    private static readonly MAX_AGENTS;
+    private static readonly EVICT_RATIO;
     private readonly outcomes;
     /** Minimum number of runs before emitting pattern alerts. */
     private readonly MIN_RUNS_FOR_ANALYSIS;
@@ -29,5 +31,6 @@ export declare class PatternAnalyser {
      * @param agentId - Agent identifier.
      */
     getAgentReliability(agentId: string): AgentReliability;
+    private evictOldAgentsIfNeeded;
 }
 //# sourceMappingURL=pattern-analyser.d.ts.map

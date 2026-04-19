@@ -3,8 +3,8 @@ Fuze AI -- Example 05: LangGraph Adapter
 
 Demonstrates the Fuze AI LangGraph adapter, which lets you wrap
 LangGraph tool nodes with Fuze runtime safety using the @fuze_tool
-decorator. Fuze auto-extracts cost from the OpenAI-shaped usage data
-returned by each tool call.
+decorator. Fuze auto-extracts tokensIn/tokensOut from the OpenAI-shaped
+usage data returned by each tool call.
 """
 
 import asyncio
@@ -17,8 +17,8 @@ from fuze_ai.adapters.langgraph import fuze_tool
 # -- Configure Fuze for this session ----------------------------------------
 
 configure({
-    "defaults": {
-        "max_cost_per_run": 2.00,
+    "resource_limits": {
+        "max_tokens_per_run": 20_000,
     },
     "loop_detection": {
         "repeat_threshold": 5,
@@ -28,11 +28,9 @@ configure({
 
 # -- LangGraph tools wrapped with Fuze --------------------------------------
 
-@fuze_tool(
-    model="openai/gpt-4o",  # pricing table; cost auto-extracted from response usage
-)
+@fuze_tool()
 async def web_search(query: str) -> dict:
-    """Search the web. Returns OpenAI-shaped response for auto cost extraction."""
+    """Search the web. Returns OpenAI-shaped response for auto token extraction."""
     h = hashlib.sha256(query.encode()).hexdigest()[:8]
     return {
         "result": f'[web_search] Top result for "{query}": https://example.com/{h}',
@@ -47,11 +45,9 @@ async def send_slack_message(channel: str, text: str) -> str:
     return f"[send_slack_message] Sent to #{channel}: {text}"
 
 
-@fuze_tool(
-    model="openai/gpt-4o",  # pricing table; cost auto-extracted from response usage
-)
+@fuze_tool()
 async def summarize_text(text: str) -> dict:
-    """Summarize a block of text. Returns OpenAI-shaped response for auto cost extraction."""
+    """Summarize a block of text. Returns OpenAI-shaped response for auto token extraction."""
     words = text.split()
     short = " ".join(words[:10]) + ("..." if len(words) > 10 else "")
     return {

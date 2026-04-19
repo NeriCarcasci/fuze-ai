@@ -1,7 +1,7 @@
 /**
  * Minimal LLM usage extractor for the proxy.
- * Mirrors the logic in packages/core/src/pricing.ts — kept local to avoid a
- * daemon → core dependency.
+ * Mirrors the logic in packages/core/src/usage-extractor.ts — kept local to
+ * avoid a daemon → core dependency.
  */
 
 export interface ProxyExtractedUsage {

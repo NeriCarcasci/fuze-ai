@@ -9,7 +9,7 @@ describe('loadDaemonConfig', () => {
     const config = loadDaemonConfig('/nonexistent/path/fuze.toml')
     expect(config.apiPort).toBe(7821)
     expect(config.retentionDays).toBe(90)
-    expect(config.budget.orgDailyBudget).toBe(100)
+    expect(config.budget.orgDailyTokenBudget).toBe(10_000_000)
     expect(config.budget.alertThreshold).toBe(0.8)
   })
 
@@ -21,16 +21,16 @@ api_port = 9000
 retention_days = 30
 
 [daemon.budget]
-org_daily_budget = 50
-per_agent_daily_budget = 10
+org_daily_token_budget = 50000
+per_agent_daily_token_budget = 10000
 alert_threshold = 0.9
 `)
     try {
       const config = loadDaemonConfig(tmpFile)
       expect(config.apiPort).toBe(9000)
       expect(config.retentionDays).toBe(30)
-      expect(config.budget.orgDailyBudget).toBe(50)
-      expect(config.budget.perAgentDailyBudget).toBe(10)
+      expect(config.budget.orgDailyTokenBudget).toBe(50000)
+      expect(config.budget.perAgentDailyTokenBudget).toBe(10000)
       expect(config.budget.alertThreshold).toBeCloseTo(0.9)
     } finally {
       fs.unlinkSync(tmpFile)

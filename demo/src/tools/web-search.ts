@@ -7,10 +7,10 @@ const SEARCH_DB: Record<string, string[]> = {
     'NIST AI Risk Management Framework published',
     'Singapore publishes agentic AI governance guidelines',
   ],
-  'AI agent cost incidents': [
-    '$1.6M weekend bill from retry loop (GeekFence incident)',
-    '$47K from two agents ping-ponging without budget limits',
-    'Fortune 500 accrues $400M unbudgeted cloud spend from agents',
+  'AI agent runaway incidents': [
+    'Retry loop burned 1.6M extra tokens overnight (GeekFence incident)',
+    'Two agents ping-ponging without limits consumed 47K tokens before kill',
+    'Fortune 500 logs runaway agents producing sustained unbounded tool calls',
   ],
 }
 
@@ -41,6 +41,5 @@ export function makeWebSearch(run: ReturnType<typeof createRun>) {
         usage: llmResponse.usage,
       }
     },
-    { model: 'openai/gpt-4o' }, // Fuze will auto-extract cost from response.usage
   )
 }

@@ -63,7 +63,7 @@ describe('Integration: full run lifecycle', () => {
     store = new AuditStore(dbPath)
     await store.init()
     runManager = new RunManager()
-    budgetEnforcer = new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 })
+    budgetEnforcer = new BudgetEnforcer({ orgDailyTokenBudget: 100000, perAgentDailyTokenBudget: 20000, alertThreshold: 0.8 })
 
     const alertManager = new AlertManager({ dedupWindowMs: 0, webhookUrls: [] })
 
@@ -99,8 +99,8 @@ describe('Integration: full run lifecycle', () => {
     const responses = await sendLines(socketPath, [
       JSON.stringify({ type: 'run_start', runId: 'intg-1', agentId: 'intg-agent' }),
       JSON.stringify({ type: 'step_start', runId: 'intg-1', stepId: 'ss1', stepNumber: 1, toolName: 'tool', argsHash: 'abc', sideEffect: false }),
-      JSON.stringify({ type: 'step_end', runId: 'intg-1', stepId: 'ss1', costUsd: 0.01, tokensIn: 100, tokensOut: 50, latencyMs: 150 }),
-      JSON.stringify({ type: 'run_end', runId: 'intg-1', status: 'completed', totalCost: 0.01 }),
+      JSON.stringify({ type: 'step_end', runId: 'intg-1', stepId: 'ss1', tokensIn: 100, tokensOut: 50, latencyMs: 150 }),
+      JSON.stringify({ type: 'run_end', runId: 'intg-1', status: 'completed' }),
     ])
 
     // step_start should get a proceed response
@@ -117,7 +117,7 @@ describe('Integration: full run lifecycle', () => {
 
   it('step_start returns kill when budget exceeded', async () => {
     // Exhaust the org budget first
-    budgetEnforcer.recordSpend('intg-agent', 99.9)
+    budgetEnforcer.recordSpend('intg-agent', 99900)
 
     const responses = await sendLines(socketPath, [
       JSON.stringify({ type: 'run_start', runId: 'intg-2', agentId: 'intg-agent' }),
@@ -154,7 +154,7 @@ describe('Integration: full run lifecycle', () => {
     for (let i = 0; i < 3; i++) {
       await sendLines(socketPath, [
         JSON.stringify({ type: 'run_start', runId: `chain-${i}`, agentId: 'chain-agent' }),
-        JSON.stringify({ type: 'run_end', runId: `chain-${i}`, status: 'completed', totalCost: 0 }),
+        JSON.stringify({ type: 'run_end', runId: `chain-${i}`, status: 'completed' }),
       ])
     }
     await new Promise((r) => setTimeout(r, 150))
@@ -165,7 +165,7 @@ describe('Integration: full run lifecycle', () => {
   it('run appears in API /api/runs after completion', async () => {
     await sendLines(socketPath, [
       JSON.stringify({ type: 'run_start', runId: 'api-run-1', agentId: 'api-agent' }),
-      JSON.stringify({ type: 'run_end', runId: 'api-run-1', status: 'completed', totalCost: 0.02 }),
+      JSON.stringify({ type: 'run_end', runId: 'api-run-1', status: 'completed' }),
     ])
     await new Promise((r) => setTimeout(r, 100))
     const res = await fetch(`http://127.0.0.1:${INTG_PORT}/api/runs`)

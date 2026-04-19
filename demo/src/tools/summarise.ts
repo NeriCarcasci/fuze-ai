@@ -34,6 +34,5 @@ export function makeSummarise(run: ReturnType<typeof createRun>) {
         usage: llmResponse.usage,
       }
     },
-    { model: 'openai/gpt-4o' },
   )
 }

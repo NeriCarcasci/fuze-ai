@@ -7,7 +7,7 @@ import type { ProxyConfig, ToolCallMessage } from '../../src/proxy/types.js'
 
 function makeConfig(overrides: Partial<ProxyConfig> = {}): ProxyConfig {
   return {
-    maxCostPerRun: 1.0,
+    maxTokensPerRun: 1000,
     maxIterations: 10,
     tracePath: path.join(os.tmpdir(), `fuze-ti-trace-${Date.now()}.jsonl`),
     verbose: false,
@@ -48,9 +48,9 @@ describe('ToolInterceptor', () => {
     expect(result.action).toBe('forward')
   })
 
-  it('returns forward with estimatedCost', async () => {
+  it('returns forward with estimatedTokens', async () => {
     const config = makeConfig({
-      tools: { echo: { estimated_cost: 0.02 } },
+      tools: { echo: { estimated_tokens: 20 } },
     })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
@@ -58,21 +58,23 @@ describe('ToolInterceptor', () => {
     const result = await ti.intercept(makeCallMsg('echo', { text: 'hi' }))
     expect(result.action).toBe('forward')
     if (result.action === 'forward') {
-      expect(result.estimatedCost).toBe(0.02)
+      expect(result.estimatedTokens).toBe(20)
     }
   })
 
-  it('blocks when budget would be exceeded', async () => {
-    const config = makeConfig({ maxCostPerRun: 0.005 }) // only $0.005 budget
+  it('blocks when token budget would be exceeded', async () => {
+    const config = makeConfig({
+      maxTokensPerRun: 5,
+      tools: { query: { estimated_tokens: 10 } },
+    })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
-    // Default tool cost is $0.01 > $0.005 ceiling
     const result = await ti.intercept(makeCallMsg('query', {}, 1))
     expect(result.action).toBe('block')
     if (result.action === 'block') {
       expect(result.response.error.message).toContain('[fuze]')
-      expect(result.response.error.message).toContain('Budget exceeded')
+      expect(result.response.error.message).toContain('Token budget exceeded')
       expect((result.response.error.data as Record<string, string>)['fuze_event']).toBe(
         'budget_exceeded',
       )
@@ -80,7 +82,10 @@ describe('ToolInterceptor', () => {
   })
 
   it('preserves the JSON-RPC id in the block response', async () => {
-    const config = makeConfig({ maxCostPerRun: 0.005 })
+    const config = makeConfig({
+      maxTokensPerRun: 5,
+      tools: { query: { estimated_tokens: 10 } },
+    })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -94,7 +99,7 @@ describe('ToolInterceptor', () => {
 
   it('blocks on repeated identical tool+args (loop detection)', async () => {
     // repeatThreshold is 3 — same signature 3 times → block on 3rd
-    const config = makeConfig({ maxCostPerRun: 100 })
+    const config = makeConfig({ maxTokensPerRun: 100 })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -112,7 +117,7 @@ describe('ToolInterceptor', () => {
   })
 
   it('does not block when args differ between calls', async () => {
-    const config = makeConfig({ maxCostPerRun: 100 })
+    const config = makeConfig({ maxTokensPerRun: 100 })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -123,7 +128,7 @@ describe('ToolInterceptor', () => {
   })
 
   it('blocks after max iterations', async () => {
-    const config = makeConfig({ maxIterations: 3, maxCostPerRun: 100 })
+    const config = makeConfig({ maxIterations: 3, maxTokensPerRun: 100 })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -140,7 +145,7 @@ describe('ToolInterceptor', () => {
   })
 
   it('records result and updates stats', async () => {
-    const config = makeConfig()
+    const config = makeConfig({ tools: { echo: { estimated_tokens: 5 } } })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -149,12 +154,15 @@ describe('ToolInterceptor', () => {
 
     const stats = ti.getStats()
     expect(stats.totalCalls).toBe(1)
-    expect(stats.totalCost).toBeGreaterThan(0)
+    expect(stats.totalTokens).toBeGreaterThan(0)
     expect(stats.blockedCalls).toBe(0)
   })
 
   it('getStats increments blockedCalls on block', async () => {
-    const config = makeConfig({ maxCostPerRun: 0.005 })
+    const config = makeConfig({
+      maxTokensPerRun: 5,
+      tools: { query: { estimated_tokens: 10 } },
+    })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
 
@@ -165,7 +173,7 @@ describe('ToolInterceptor', () => {
   })
 
   it('setAvailableTools does not block unknown tools', async () => {
-    const config = makeConfig({ maxCostPerRun: 100 })
+    const config = makeConfig({ maxTokensPerRun: 100 })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)
     ti.setAvailableTools([{ name: 'echo', description: '', inputSchema: {} }])
@@ -177,8 +185,8 @@ describe('ToolInterceptor', () => {
 
   it('blocks when max_calls_per_run is exceeded', async () => {
     const config = makeConfig({
-      maxCostPerRun: 100,
-      tools: { echo: { estimated_cost: 0.01, max_calls_per_run: 2 } },
+      maxTokensPerRun: 100,
+      tools: { echo: { estimated_tokens: 10, max_calls_per_run: 2 } },
     })
     traceFiles.push(config.tracePath)
     const ti = new ToolInterceptor(config, config.tracePath)

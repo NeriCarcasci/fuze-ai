@@ -1,5 +1,5 @@
-// Usage extraction — reads token counts from known LLM response shapes.
-// No USD/pricing logic. Token counts are tracked as pure telemetry.
+// Reads token counts from known LLM response shapes.
+// Pure telemetry — no pricing, no currency conversion.
 
 /**
  * Token usage extracted from an LLM response object.

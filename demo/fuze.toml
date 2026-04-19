@@ -1,8 +1,10 @@
 [defaults]
 max_retries = 2
 timeout = 10000
-max_cost_per_run = 2.00
 max_iterations = 20
+
+[resource_limits]
+max_tokens_per_run = 50000
 
 [loop_detection]
 window_size = 5

@@ -4,15 +4,17 @@ import { log } from './logger.js'
 
 async function main(): Promise<void> {
   log.header('Fuze AI — End-to-End Demo')
-  log.info('Exercises: guard(), budget enforcement, auto cost extraction,')
+  log.info('Exercises: guard(), token-ceiling enforcement, auto usage extraction,')
   log.info('loop detection, side-effect tracking, compensation, trace recording.')
   log.info('')
 
   // Configure Fuze — connect to daemon for live dashboard
   configure({
     defaults: {
-      maxCostPerRun: 2.00,
       maxIterations: 20,
+    },
+    resourceLimits: {
+      maxTokensPerRun: 50_000,
     },
     loopDetection: {
       windowSize: 5,
@@ -29,14 +31,14 @@ async function main(): Promise<void> {
     await runResearchAgent('AI Agent Safety and EU AI Act Compliance')
   } catch (err: unknown) {
     log.error(`Agent terminated: ${(err as Error).message}`)
-    log.warn('This may be expected — budget or loop limit reached.')
+    log.warn('This may be expected — token ceiling or loop limit reached.')
   }
 
   log.header('Demo Summary')
   log.info('Features exercised:')
   log.info('  [x] guard() wrapping via createRun().guard()')
-  log.info('  [x] Budget enforcement ($2.00 ceiling)')
-  log.info('  [x] Auto cost extraction from LLM usage metadata')
+  log.info('  [x] Token ceiling enforcement (50,000-token ceiling)')
+  log.info('  [x] Auto token extraction from LLM usage metadata')
   log.info('  [x] Loop detection (repeated webSearch calls)')
   log.info('  [x] No-progress detection (repeated summarise calls)')
   log.info('  [x] Side-effect tracking (email send)')

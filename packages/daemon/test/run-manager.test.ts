@@ -17,16 +17,17 @@ describe('RunManager', () => {
     expect(run?.agentId).toBe('agent-a')
   })
 
-  it('records steps and updates totalSteps / totalCost', () => {
+  it('records steps and updates totalSteps / totalTokens', () => {
     rm.startRun('r1', 'agent-a', {})
     rm.recordStep('r1', {
       stepId: 's1', stepNumber: 1, toolName: 'myTool',
       argsHash: 'abc', sideEffect: false, startedAt: new Date().toISOString(),
-      costUsd: 0.05,
+      tokensIn: 40, tokensOut: 10,
     })
     const run = rm.getRun('r1')
     expect(run?.totalSteps).toBe(1)
-    expect(run?.totalCost).toBeCloseTo(0.05)
+    expect(run?.totalTokensIn).toBe(40)
+    expect(run?.totalTokensOut).toBe(10)
   })
 
   it('throws when recording a step for unknown run', () => {
@@ -40,7 +41,7 @@ describe('RunManager', () => {
 
   it('ends a run and moves it to ended set', () => {
     rm.startRun('r1', 'agent-a', {})
-    rm.endRun('r1', 'completed', 0.1)
+    rm.endRun('r1', 'completed')
     expect(rm.getActiveRunCount()).toBe(0)
     const run = rm.getRun('r1')
     expect(run?.status).toBe('completed')
@@ -60,7 +61,7 @@ describe('RunManager', () => {
   it('getRunsByAgent returns both active and ended runs', () => {
     rm.startRun('r1', 'agent-a', {})
     rm.startRun('r2', 'agent-a', {})
-    rm.endRun('r1', 'completed', 0)
+    rm.endRun('r1', 'completed')
     const runs = rm.getRunsByAgent('agent-a')
     expect(runs).toHaveLength(2)
   })
@@ -79,7 +80,7 @@ describe('RunManager', () => {
     // MAX_ENDED is 1000, so start and end 1001 runs
     for (let i = 0; i < 1001; i++) {
       rm.startRun(`r-${i}`, 'agent-a', {})
-      rm.endRun(`r-${i}`, 'completed', 0)
+      rm.endRun(`r-${i}`, 'completed')
     }
     // First run should have been evicted
     expect(rm.getRun('r-0')).toBeNull()

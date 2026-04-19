@@ -13,5 +13,6 @@ export const DEFAULTS = {
         repeatThreshold: 3,
         maxFlatSteps: 4,
     },
+    resourceLimits: {},
 };
 //# sourceMappingURL=types.js.map

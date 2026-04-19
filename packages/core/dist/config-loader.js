@@ -92,6 +92,23 @@ function parseCloud(value) {
     }
     return cloud;
 }
+function parseResourceLimits(value) {
+    if (value === undefined)
+        return undefined;
+    if (!isRecord(value))
+        throw new Error(`Invalid 'resourceLimits': expected a table/object`);
+    const out = {};
+    if (value['maxSteps'] !== undefined) {
+        out.maxSteps = readNumber(value['maxSteps'], 'resourceLimits.maxSteps', { integer: true, min: 1 });
+    }
+    if (value['maxTokensPerRun'] !== undefined) {
+        out.maxTokensPerRun = readNumber(value['maxTokensPerRun'], 'resourceLimits.maxTokensPerRun', { integer: true, min: 1 });
+    }
+    if (value['maxWallClockMs'] !== undefined) {
+        out.maxWallClockMs = readNumber(value['maxWallClockMs'], 'resourceLimits.maxWallClockMs', { integer: true, min: 1 });
+    }
+    return out;
+}
 function parseProject(value) {
     if (value === undefined)
         return undefined;
@@ -116,6 +133,7 @@ function validateConfig(raw) {
         daemon: parseDaemon(raw['daemon']),
         cloud: parseCloud(raw['cloud']),
         project: parseProject(raw['project']),
+        resourceLimits: parseResourceLimits(raw['resourceLimits']),
     };
 }
 function readResolvedNumber(value, fieldPath, opts = {}) {
@@ -173,6 +191,10 @@ export class ConfigLoader {
                 windowSize: readResolvedNumber(guardOptions.loopDetection?.windowSize ?? loop.windowSize ?? DEFAULTS.loopDetection.windowSize, 'loopDetection.windowSize', { integer: true, min: 1 }),
                 repeatThreshold: readResolvedNumber(guardOptions.loopDetection?.repeatThreshold ?? loop.repeatThreshold ?? DEFAULTS.loopDetection.repeatThreshold, 'loopDetection.repeatThreshold', { integer: true, min: 1 }),
                 maxFlatSteps: readResolvedNumber(guardOptions.loopDetection?.maxFlatSteps ?? loop.maxFlatSteps ?? DEFAULTS.loopDetection.maxFlatSteps, 'loopDetection.maxFlatSteps', { integer: true, min: 1 }),
+            },
+            resourceLimits: {
+                ...(projectConfig.resourceLimits ?? {}),
+                ...(guardOptions.resourceLimits ?? {}),
             },
         };
     }

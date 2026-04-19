@@ -36,17 +36,17 @@ describe('PatternAnalyser', () => {
     expect(alerts).toHaveLength(0)
   })
 
-  it('emits cost_spike when latest cost > 2x avg of previous', () => {
-    for (let i = 0; i < 4; i++) pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1.0)
-    pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 3.0)
+  it('emits token_spike when latest tokens > 2x avg of previous', () => {
+    for (let i = 0; i < 4; i++) pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1000)
+    pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 3000)
     const alerts = pa.analyse()
-    expect(alerts.some((a) => a.type === 'cost_spike')).toBe(true)
+    expect(alerts.some((a) => a.type === 'token_spike')).toBe(true)
   })
 
-  it('does not emit cost_spike when latest cost is normal', () => {
-    for (let i = 0; i < 4; i++) pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1.0)
-    pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1.5)
-    const alerts = pa.analyse().filter((a) => a.type === 'cost_spike')
+  it('does not emit token_spike when latest tokens are normal', () => {
+    for (let i = 0; i < 4; i++) pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1000)
+    pa.recordRunOutcome('agent-a', 'completed', undefined, undefined, 1500)
+    const alerts = pa.analyse().filter((a) => a.type === 'token_spike')
     expect(alerts).toHaveLength(0)
   })
 

@@ -1,5 +1,6 @@
 import type { GuardOptions, ResolvedOptions } from './types.js';
 import { UsageTracker } from './budget-tracker.js';
+import { ResourceLimitTracker } from './resource-limit-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
@@ -10,6 +11,7 @@ import type { FuzeService } from './services/index.js';
 export interface GuardContext {
     runId: string;
     usageTracker: UsageTracker;
+    resourceLimitTracker: ResourceLimitTracker;
     loopDetector: LoopDetector;
     sideEffectRegistry: SideEffectRegistry;
     traceRecorder: TraceRecorder;

@@ -3,11 +3,11 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { configure, createRun } from 'fuze-ai'
 
-// Set a shared budget ceiling for all runs in this session.
+// Shared token ceiling for all runs in this session.
 // createRun() inherits this via the global config.
 configure({
-  defaults: {
-    maxCostPerRun: 5.00,
+  resourceLimits: {
+    maxTokensPerRun: 50_000,
   },
 })
 
@@ -71,17 +71,13 @@ async function main() {
 
   const run = createRun('research-team')
   console.log(`Run ID : ${run.runId}`)
-  console.log(`Budget : $5.00 (shared across all agents)\n`)
+  console.log(`Ceiling: 50,000 tokens (shared across all agents)\n`)
 
   // --- Researcher agent ---
   console.log('=== Researcher Agent ===')
 
-  const guardedSearch = run.guard(webSearch, {
-    model: 'openai/gpt-4o', // pricing table; cost auto-extracted from response usage
-  })
-  const guardedSummarise = run.guard(summarise, {
-    model: 'openai/gpt-4o', // pricing table; cost auto-extracted from response usage
-  })
+  const guardedSearch = run.guard(webSearch)
+  const guardedSummarise = run.guard(summarise)
 
   const searchResponse = await guardedSearch('budget')
   console.log('Search results:', searchResponse.results)
@@ -90,17 +86,14 @@ async function main() {
   console.log('Summary:', summaryResponse.result)
 
   const midStatus = run.getStatus()
-  console.log(`  [budget after researcher: $${midStatus.totalCost.toFixed(4)} spent, ${midStatus.stepCount} steps]\n`)
+  const midTokens = midStatus.totalTokensIn + midStatus.totalTokensOut
+  console.log(`  [after researcher: ${midTokens} tokens across ${midStatus.stepCount} steps]\n`)
 
   // --- Writer agent ---
   console.log('=== Writer Agent ===')
 
-  const guardedDraft = run.guard(draft, {
-    model: 'openai/gpt-4o', // pricing table; cost auto-extracted from response usage
-  })
-  const guardedEdit = run.guard(editDraft, {
-    model: 'openai/gpt-4o', // pricing table; cost auto-extracted from response usage
-  })
+  const guardedDraft = run.guard(draft)
+  const guardedEdit = run.guard(editDraft)
 
   const draftResponse = await guardedDraft(summaryResponse.result, 'technical')
   console.log('Draft:', draftResponse.result)
@@ -112,11 +105,11 @@ async function main() {
   // --- Final run status ---
   console.log('=== Run Status ===')
   const status = run.getStatus()
-  console.log(`  Total cost     : $${status.totalCost.toFixed(4)}`)
-  console.log(`  Total tokens in: ${status.totalTokensIn}`)
-  console.log(`  Total tokens out: ${status.totalTokensOut}`)
+  const totalTokens = status.totalTokensIn + status.totalTokensOut
+  console.log(`  Tokens in      : ${status.totalTokensIn}`)
+  console.log(`  Tokens out     : ${status.totalTokensOut}`)
   console.log(`  Steps completed: ${status.stepCount}`)
-  console.log(`  Remaining budget: $${(5.00 - status.totalCost).toFixed(4)}`)
+  console.log(`  Remaining       : ${Math.max(0, 50_000 - totalTokens)} tokens`)
   console.log()
 
   await run.end()

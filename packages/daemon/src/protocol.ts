@@ -34,7 +34,6 @@ export interface RunEndMessage {
   type: 'run_end'
   runId: string
   status: 'completed' | 'failed' | 'killed' | 'budget_exceeded' | 'loop_detected'
-  totalCost: number
 }
 
 export interface StepStartMessage {
@@ -51,7 +50,6 @@ export interface StepEndMessage {
   type: 'step_end'
   runId: string
   stepId: string
-  costUsd: number
   tokensIn: number
   tokensOut: number
   latencyMs: number
@@ -93,9 +91,9 @@ export type DaemonResponse = ProceedResponse | KillResponse | PauseResponse | Re
 
 const REQUIRED_FIELDS: Record<string, string[]> = {
   run_start:       ['runId', 'agentId'],
-  run_end:         ['runId', 'status', 'totalCost'],
+  run_end:         ['runId', 'status'],
   step_start:      ['runId', 'stepId', 'stepNumber', 'toolName', 'argsHash'],
-  step_end:        ['runId', 'stepId', 'costUsd', 'tokensIn', 'tokensOut', 'latencyMs'],
+  step_end:        ['runId', 'stepId', 'tokensIn', 'tokensOut', 'latencyMs'],
   guard_event:     ['runId', 'eventType', 'severity'],
   register_tools:  ['projectId', 'tools'],
   get_config:      [],

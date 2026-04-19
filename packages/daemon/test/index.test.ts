@@ -14,8 +14,8 @@ describe('daemon index bootstrap', () => {
         storagePath: 'invalid-storage.sqlite',
         retentionDays: 30,
         budget: {
-          orgDailyBudget: 100,
-          perAgentDailyBudget: 20,
+          orgDailyTokenBudget: 100000,
+          perAgentDailyTokenBudget: 20000,
           alertThreshold: 0.8,
         },
         alerts: {

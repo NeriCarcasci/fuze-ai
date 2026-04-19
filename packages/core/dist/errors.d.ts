@@ -21,4 +21,15 @@ export declare class GuardTimeout extends FuzeError {
     readonly timeoutMs: number;
     constructor(toolName: string, timeoutMs: number);
 }
+export type ResourceLimitKind = 'maxSteps' | 'maxTokensPerRun' | 'maxWallClockMs';
+export interface ResourceLimitExceededDetails {
+    toolName: string;
+    limit: ResourceLimitKind;
+    ceiling: number;
+    observed: number;
+}
+export declare class ResourceLimitExceeded extends FuzeError {
+    readonly details: ResourceLimitExceededDetails;
+    constructor(details: ResourceLimitExceededDetails);
+}
 //# sourceMappingURL=errors.d.ts.map

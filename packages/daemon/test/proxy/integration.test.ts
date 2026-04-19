@@ -46,7 +46,7 @@ class FakeTransport {
 
 function makeConfig(overrides: Partial<ProxyConfig> = {}): ProxyConfig {
   return {
-    maxCostPerRun: 10.0,
+    maxTokensPerRun: 10_000,
     maxIterations: 50,
     tracePath: path.join(os.tmpdir(), `fuze-intg-proxy-${Date.now()}.jsonl`),
     verbose: false,
@@ -110,8 +110,8 @@ describe('Proxy integration', () => {
 
   it('budget enforcement: calls blocked once budget exhausted', async () => {
     const config = makeConfig({
-      maxCostPerRun: 0.025, // only 2 calls at $0.01/call, 3rd blocked (0.01+0.01=0.02, 3rd would be 0.03 > 0.025)
-      tools: { echo: { estimated_cost: 0.01 } },
+      maxTokensPerRun: 25, // only 2 calls at 10 tokens each; 3rd (30) exceeds ceiling
+      tools: { echo: { estimated_tokens: 10 } },
     })
     const { transport } = await makeRouter(config)
 
@@ -137,7 +137,7 @@ describe('Proxy integration', () => {
   }, 10000)
 
   it('loop detection: 3 identical calls returns error on 3rd', async () => {
-    const config = makeConfig({ maxCostPerRun: 100 })
+    const config = makeConfig({ maxTokensPerRun: 100 })
     const { transport } = await makeRouter(config)
 
     transport.inject({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {

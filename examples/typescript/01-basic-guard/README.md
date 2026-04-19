@@ -5,8 +5,8 @@ The simplest possible Fuze AI example. Wraps a plain async function with `guard(
 ## What it demonstrates
 
 - Importing `guard` from `fuze-ai`
-- Wrapping an async function so every invocation is automatically traced, budget-checked, and loop-monitored
-- Zero-config usage: no `configure()` call needed; Fuze applies sensible defaults (3 retries, 30 s timeout, no cost ceiling)
+- Wrapping an async function so every invocation is automatically traced, token-budget-checked, and loop-monitored
+- Zero-config usage: no `configure()` call needed; Fuze applies sensible defaults (3 retries, 30 s timeout, no token ceiling)
 
 ## How to run
 
@@ -35,5 +35,5 @@ After the run, open `./fuze-traces.jsonl`. Each line is a JSON object representi
 - `toolName` -- the name of the wrapped function (`searchDocuments`)
 - `argsHash` -- a hash of the arguments passed; differs for each call since the query string changes
 - `latencyMs` -- wall-clock time for the call (should be ~200 ms due to the simulated delay)
-- `costUsd` -- `0` because no model/token estimates were provided
+- `tokensIn` / `tokensOut` -- `0` because the return value did not carry OpenAI-shaped usage data
 - `error` -- absent, confirming all three calls succeeded

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { FuzeConfig, GuardOptions, RunContext } from './types.js'
 import { ConfigLoader } from './config-loader.js'
 import { UsageTracker } from './budget-tracker.js'
+import { ResourceLimitTracker } from './resource-limit-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
@@ -44,10 +45,11 @@ function mergeConfigs(base: FuzeConfig, override: FuzeConfig): FuzeConfig {
 }
 
 // Re-export public types
-export type { GuardOptions, FuzeConfig, RunContext } from './types.js'
-export { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
-export { extractUsageFromResult } from './pricing.js'
-export type { ExtractedUsage } from './pricing.js'
+export type { GuardOptions, FuzeConfig, RunContext, ResourceLimits, ResourceUsageStatus, UsageStatus } from './types.js'
+export { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js'
+export { ResourceLimitTracker } from './resource-limit-tracker.js'
+export { extractUsageFromResult } from './usage-extractor.js'
+export type { ExtractedUsage } from './usage-extractor.js'
 export { TraceRecorder, verifyChain } from './trace-recorder.js'
 export type { TraceEntry, SignedTraceEntry, VerifyChainResult } from './trace-recorder.js'
 
@@ -138,6 +140,7 @@ export function guard<T extends (...args: unknown[]) => unknown>(
   const context: GuardContext = {
     runId,
     usageTracker: new UsageTracker(),
+    resourceLimitTracker: new ResourceLimitTracker(resolved.resourceLimits),
     loopDetector: new LoopDetector({
       ...resolved.loopDetection,
       maxIterations: resolved.maxIterations,
@@ -186,6 +189,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
   const context: GuardContext = {
     runId,
     usageTracker: new UsageTracker(),
+    resourceLimitTracker: new ResourceLimitTracker(resolved.resourceLimits),
     loopDetector: new LoopDetector({
       ...resolved.loopDetection,
       maxIterations: resolved.maxIterations,

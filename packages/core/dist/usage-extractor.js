@@ -1,5 +1,5 @@
-// Usage extraction — reads token counts from known LLM response shapes.
-// No USD/pricing logic. Token counts are tracked as pure telemetry.
+// Reads token counts from known LLM response shapes.
+// Pure telemetry — no pricing, no currency conversion.
 /**
  * Inspects a return value and extracts token usage from known LLM response shapes.
  *
@@ -86,4 +86,4 @@ export function extractUsageFromResult(result) {
     }
     return null;
 }
-//# sourceMappingURL=pricing.js.map
+//# sourceMappingURL=usage-extractor.js.map

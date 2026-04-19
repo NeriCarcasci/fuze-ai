@@ -4,8 +4,8 @@
 [defaults]
 maxRetries = 3
 timeout = 30000           # ms
-maxCostPerStep = 1.00     # USD
-maxCostPerRun = 10.00     # USD
+maxTokensPerRun = 100000  # total input+output tokens per run
+maxWallClockMs = 600000   # wall-clock ceiling per run (ms)
 maxIterations = 25
 onLoop = "kill"           # "kill" | "warn" | "skip"
 traceOutput = "./fuze-traces.jsonl"
@@ -14,7 +14,3 @@ traceOutput = "./fuze-traces.jsonl"
 windowSize = 5
 repeatThreshold = 3
 maxFlatSteps = 4
-
-# Override or add model pricing (USD per token, not per 1K)
-[providers]
-# "openai/gpt-4o" = { input = 0.0000025, output = 0.00001 }

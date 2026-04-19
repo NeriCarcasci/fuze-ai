@@ -1,6 +1,6 @@
 import type { BudgetConfig, BudgetDecision } from './types.js'
 
-interface AgentSpend {
+interface AgentTokens {
   today: number
   lastReset: string  // ISO date string YYYY-MM-DD
 }
@@ -10,142 +10,121 @@ function todayStr(): string {
 }
 
 /**
- * Enforces org-wide and per-agent daily budget ceilings.
+ * Enforces org-wide and per-agent daily token ceilings.
  * Checked before each step via checkBudget().
  */
 export class BudgetEnforcer {
-  private orgSpend = 0
+  private orgTokens = 0
   private orgLastReset = todayStr()
-  private readonly agentSpend = new Map<string, AgentSpend>()
+  private readonly agentTokens = new Map<string, AgentTokens>()
 
   constructor(private readonly config: BudgetConfig) {}
 
   /**
-   * Ensure daily spend counters are for the current day, resetting if needed.
+   * Ensure daily token counters are for the current day, resetting if needed.
    */
   private rolloverIfNeeded(): void {
     const today = todayStr()
     if (this.orgLastReset !== today) {
       this.resetDaily()
     } else {
-      // Roll over individual agents that haven't been reset today
-      for (const [agentId, spend] of this.agentSpend) {
+      for (const [agentId, spend] of this.agentTokens) {
         if (spend.lastReset !== today) {
-          this.agentSpend.set(agentId, { today: 0, lastReset: today })
+          this.agentTokens.set(agentId, { today: 0, lastReset: today })
         }
       }
     }
   }
 
-  private getOrCreateAgent(agentId: string): AgentSpend {
+  private getOrCreateAgent(agentId: string): AgentTokens {
     const today = todayStr()
-    if (!this.agentSpend.has(agentId)) {
-      this.agentSpend.set(agentId, { today: 0, lastReset: today })
+    if (!this.agentTokens.has(agentId)) {
+      this.agentTokens.set(agentId, { today: 0, lastReset: today })
     }
-    return this.agentSpend.get(agentId)!
+    return this.agentTokens.get(agentId)!
   }
 
   /**
-   * Check whether a step should proceed given estimated cost.
+   * Check whether a step should proceed given estimated token usage.
    *
    * @param agentId - The agent making the call.
-   * @param estimatedCost - Estimated cost in USD for the upcoming step.
+   * @param estimatedTokens - Estimated tokens for the upcoming step.
    * @returns null if the step can proceed, or a BudgetDecision with action='kill'.
    */
-  checkBudget(agentId: string, estimatedCost: number): BudgetDecision | null {
+  checkBudget(agentId: string, estimatedTokens: number): BudgetDecision | null {
     this.rolloverIfNeeded()
     const agent = this.getOrCreateAgent(agentId)
 
-    // Check org-wide ceiling
-    if (this.orgSpend + estimatedCost > this.config.orgDailyBudget) {
+    if (this.orgTokens + estimatedTokens > this.config.orgDailyTokenBudget) {
       return {
         action: 'kill',
-        reason: `Org daily budget of $${this.config.orgDailyBudget.toFixed(2)} exceeded ` +
-                `(current: $${this.orgSpend.toFixed(2)} + estimated $${estimatedCost.toFixed(2)})`,
+        reason: `Org daily token budget of ${this.config.orgDailyTokenBudget} exceeded ` +
+                `(current: ${this.orgTokens} + estimated ${estimatedTokens})`,
       }
     }
 
-    // Check per-agent ceiling
-    if (agent.today + estimatedCost > this.config.perAgentDailyBudget) {
+    if (agent.today + estimatedTokens > this.config.perAgentDailyTokenBudget) {
       return {
         action: 'kill',
-        reason: `Agent '${agentId}' daily budget of $${this.config.perAgentDailyBudget.toFixed(2)} exceeded ` +
-                `(current: $${agent.today.toFixed(2)} + estimated $${estimatedCost.toFixed(2)})`,
+        reason: `Agent '${agentId}' daily token budget of ${this.config.perAgentDailyTokenBudget} exceeded ` +
+                `(current: ${agent.today} + estimated ${estimatedTokens})`,
       }
     }
 
-    // Alert threshold check (return null but callers can read alert state)
     return null
   }
 
   /**
-   * Record actual spend after a step completes.
+   * Record actual token usage after a step completes.
    *
-   * @param agentId - The agent that incurred the cost.
-   * @param cost - Actual cost in USD.
+   * @param agentId - The agent that consumed tokens.
+   * @param tokens - Tokens consumed (tokensIn + tokensOut).
    */
-  recordSpend(agentId: string, cost: number): void {
+  recordSpend(agentId: string, tokens: number): void {
     this.rolloverIfNeeded()
-    this.orgSpend += cost
+    this.orgTokens += tokens
     const agent = this.getOrCreateAgent(agentId)
-    agent.today += cost
+    agent.today += tokens
   }
 
-  /**
-   * Returns org-level spend status.
-   */
   getOrgSpend(): { today: number; ceiling: number; remaining: number } {
     this.rolloverIfNeeded()
     return {
-      today: this.orgSpend,
-      ceiling: this.config.orgDailyBudget,
-      remaining: Math.max(0, this.config.orgDailyBudget - this.orgSpend),
+      today: this.orgTokens,
+      ceiling: this.config.orgDailyTokenBudget,
+      remaining: Math.max(0, this.config.orgDailyTokenBudget - this.orgTokens),
     }
   }
 
-  /**
-   * Returns spend status for a specific agent.
-   *
-   * @param agentId - Agent identifier.
-   */
   getAgentSpend(agentId: string): { today: number; ceiling: number; remaining: number } {
     this.rolloverIfNeeded()
     const agent = this.getOrCreateAgent(agentId)
     return {
       today: agent.today,
-      ceiling: this.config.perAgentDailyBudget,
-      remaining: Math.max(0, this.config.perAgentDailyBudget - agent.today),
+      ceiling: this.config.perAgentDailyTokenBudget,
+      remaining: Math.max(0, this.config.perAgentDailyTokenBudget - agent.today),
     }
   }
 
-  /**
-   * Returns spend for all known agents.
-   */
   getAllAgentSpend(): Record<string, { today: number; ceiling: number; remaining: number }> {
     this.rolloverIfNeeded()
     const result: Record<string, { today: number; ceiling: number; remaining: number }> = {}
-    for (const [agentId] of this.agentSpend) {
+    for (const [agentId] of this.agentTokens) {
       result[agentId] = this.getAgentSpend(agentId)
     }
     return result
   }
 
-  /**
-   * Returns whether the org has crossed the alert threshold.
-   */
   isAtAlertThreshold(): boolean {
-    return this.orgSpend >= this.config.orgDailyBudget * this.config.alertThreshold
+    return this.orgTokens >= this.config.orgDailyTokenBudget * this.config.alertThreshold
   }
 
-  /**
-   * Reset all daily budget counters to zero.
-   */
   resetDaily(): void {
     const today = todayStr()
-    this.orgSpend = 0
+    this.orgTokens = 0
     this.orgLastReset = today
-    for (const [agentId] of this.agentSpend) {
-      this.agentSpend.set(agentId, { today: 0, lastReset: today })
+    for (const [agentId] of this.agentTokens) {
+      this.agentTokens.set(agentId, { today: 0, lastReset: today })
     }
   }
 }

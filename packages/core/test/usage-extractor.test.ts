@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractUsageFromResult } from '../src/pricing.js'
+import { extractUsageFromResult } from '../src/usage-extractor.js'
 
 describe('extractUsageFromResult()', () => {
   it('returns null for null', () => {

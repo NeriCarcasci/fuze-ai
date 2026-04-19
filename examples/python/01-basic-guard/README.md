@@ -35,5 +35,5 @@ After the run, open `./fuze-traces.jsonl`. Each line is a JSON object representi
 - `tool_name` -- the name of the wrapped function (`search_documents`)
 - `args_hash` -- a hash of the arguments passed; differs for each call since the query string changes
 - `latency_ms` -- wall-clock time for the call (should be ~200 ms due to the simulated delay)
-- `cost_usd` -- `0` because no model/token estimates were provided
+- `tokens_in` / `tokens_out` -- `0` because the return value did not carry OpenAI-shaped usage data
 - `error` -- absent, confirming all three calls succeeded

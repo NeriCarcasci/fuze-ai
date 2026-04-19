@@ -1,32 +1,28 @@
 """
-Fuze AI -- Example 02: Budget Ceiling
+Fuze AI -- Example 02: Token Ceiling
 
-Demonstrates per-run budget limits with automatic cost extraction.
-Each call returns an OpenAI-shaped response; Fuze reads usage data
-and applies gpt-4o pricing automatically.
-Run ceiling is $1.00; calls are blocked once the budget is exhausted.
+Demonstrates per-run token limits. Each call returns an OpenAI-shaped
+response; Fuze auto-extracts tokensIn/tokensOut from the usage payload.
+Run ceiling is 100,000 tokens; calls are blocked once the ceiling is crossed.
 """
 
 import asyncio
 import hashlib
 
-from fuze_ai import configure, guard, BudgetExceeded
+from fuze_ai import configure, guard, ResourceLimitExceeded
 
 
-# $1.00 run ceiling. Built-in gpt-4o pricing is used automatically.
+# 100,000-token run ceiling.
 configure({
-    "defaults": {
-        "max_cost_per_run": 1.00,
+    "resource_limits": {
+        "max_tokens_per_run": 100_000,
     },
 })
 
 
-@guard(
-    max_cost=0.50,           # per-step ceiling ($0.50)
-    model="openai/gpt-4o",  # pricing table; cost auto-extracted from response usage
-)
+@guard()
 async def analyse_chunk(chunk: str) -> dict:
-    """Analyse a text chunk. Returns OpenAI-shaped response for auto cost extraction."""
+    """Analyse a text chunk. Returns OpenAI-shaped response for auto token extraction."""
     h = hashlib.sha256(chunk.encode()).hexdigest()
     return {
         "result": f'Chunk "{chunk}" analysed: sha256={h[:16]}...',
@@ -36,10 +32,9 @@ async def analyse_chunk(chunk: str) -> dict:
 
 
 async def main() -> None:
-    print("Fuze AI -- Budget Ceiling Example\n")
-    print("Run ceiling    : $1.00")
-    print("Step ceiling   : $0.50")
-    print("Cost/call      : auto-extracted from response usage (gpt-4o pricing)\n")
+    print("Fuze AI -- Token Ceiling Example\n")
+    print("Run ceiling : 100,000 tokens (input + output combined)")
+    print("Per call    : ~58,000 tokens (auto-extracted from response.usage)\n")
 
     chunks = ["quarterly-report", "customer-feedback", "incident-log", "roadmap-draft", "compliance-audit"]
 
@@ -47,16 +42,15 @@ async def main() -> None:
         try:
             response = await analyse_chunk(chunk)
             print(f"Call {i} OK      : {response['result']}")
-        except BudgetExceeded as exc:
+        except ResourceLimitExceeded as exc:
             print(f"Call {i} BLOCKED : {exc}")
-            print(f"  level    : {exc.level}")
-            print(f"  estimated: ${exc.estimated_cost:.4f}")
-            print(f"  ceiling  : ${exc.ceiling:.4f}")
-            print(f"  spent    : ${exc.spent:.4f}")
-            print("\nBudget enforcement prevented runaway spend.")
+            print(f"  limit    : {exc.details['limit']}")
+            print(f"  observed : {exc.details['observed']}")
+            print(f"  ceiling  : {exc.details['ceiling']}")
+            print("\nResource-limit enforcement prevented runaway token usage.")
             break
 
-    print("\nDone. Check ./fuze-traces.jsonl for cost details.")
+    print("\nDone. Check ./fuze-traces.jsonl for per-step token usage.")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as TOML from '@iarna/toml'
-import type { FuzeConfig, GuardOptions, ResolvedOptions } from './types.js'
+import type { FuzeConfig, GuardOptions, ResolvedOptions, ResourceLimits } from './types.js'
 import { DEFAULTS } from './types.js'
 
 type UnknownRecord = Record<string, unknown>
@@ -93,6 +93,23 @@ function parseCloud(value: unknown): FuzeConfig['cloud'] {
   return cloud
 }
 
+function parseResourceLimits(value: unknown): ResourceLimits | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error(`Invalid 'resourceLimits': expected a table/object`)
+
+  const out: ResourceLimits = {}
+  if (value['maxSteps'] !== undefined) {
+    out.maxSteps = readNumber(value['maxSteps'], 'resourceLimits.maxSteps', { integer: true, min: 1 })
+  }
+  if (value['maxTokensPerRun'] !== undefined) {
+    out.maxTokensPerRun = readNumber(value['maxTokensPerRun'], 'resourceLimits.maxTokensPerRun', { integer: true, min: 1 })
+  }
+  if (value['maxWallClockMs'] !== undefined) {
+    out.maxWallClockMs = readNumber(value['maxWallClockMs'], 'resourceLimits.maxWallClockMs', { integer: true, min: 1 })
+  }
+  return out
+}
+
 function parseProject(value: unknown): FuzeConfig['project'] {
   if (value === undefined) return undefined
   if (!isRecord(value)) throw new Error(`Invalid 'project': expected a table/object`)
@@ -117,6 +134,7 @@ function validateConfig(raw: unknown): FuzeConfig {
     daemon: parseDaemon(raw['daemon']),
     cloud: parseCloud(raw['cloud']),
     project: parseProject(raw['project']),
+    resourceLimits: parseResourceLimits(raw['resourceLimits']),
   }
 }
 
@@ -214,6 +232,10 @@ export class ConfigLoader {
           'loopDetection.maxFlatSteps',
           { integer: true, min: 1 },
         ),
+      },
+      resourceLimits: {
+        ...(projectConfig.resourceLimits ?? {}),
+        ...(guardOptions.resourceLimits ?? {}),
       },
     }
   }

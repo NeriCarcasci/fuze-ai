@@ -1,6 +1,6 @@
 /**
  * Simulates an LLM API call and returns a response with OpenAI-compatible
- * usage metadata so Fuze can auto-extract actual cost.
+ * usage metadata so Fuze can auto-extract tokensIn/tokensOut.
  */
 export async function fakeLLM(prompt: string, options?: {
   tokensIn?: number

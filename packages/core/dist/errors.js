@@ -37,4 +37,12 @@ export class GuardTimeout extends FuzeError {
         this.timeoutMs = timeoutMs;
     }
 }
+export class ResourceLimitExceeded extends FuzeError {
+    details;
+    constructor(details) {
+        super(`ResourceLimitExceeded: step '${details.toolName}' exceeded ${details.limit} (observed ${details.observed}, ceiling ${details.ceiling})`);
+        this.name = 'ResourceLimitExceeded';
+        this.details = details;
+    }
+}
 //# sourceMappingURL=errors.js.map

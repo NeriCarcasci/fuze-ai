@@ -1,7 +1,8 @@
 /** Daemon-specific types for Fuze AI Phase 3. */
 
 export interface RunConfig {
-  maxCostPerRun?: number
+  maxTokensPerRun?: number
+  maxStepsPerRun?: number
   maxIterations?: number
   model?: string
 }
@@ -16,7 +17,6 @@ export interface StepData {
 }
 
 export interface StepMetadata {
-  costUsd: number
   tokensIn: number
   tokensOut: number
   latencyMs: number
@@ -39,7 +39,8 @@ export interface RunState {
   modelName: string
   status: 'running' | 'completed' | 'failed' | 'killed' | 'budget_exceeded' | 'loop_detected'
   startedAt: string
-  totalCost: number
+  totalTokensIn: number
+  totalTokensOut: number
   totalSteps: number
   steps: StepData[]
   guardEvents: GuardEventData[]
@@ -57,7 +58,6 @@ export interface RunRecord {
   status: string
   startedAt: string
   endedAt?: string
-  totalCost: number
   totalTokensIn: number
   totalTokensOut: number
   totalSteps: number
@@ -75,7 +75,6 @@ export interface DbStepRecord {
   toolName: string
   argsHash: string
   hasSideEffect: number
-  costUsd: number
   tokensIn: number
   tokensOut: number
   latencyMs: number
@@ -96,9 +95,10 @@ export interface DbGuardEventRecord {
   hash: string
 }
 
+// Org-wide caps are expressed in tokens/steps per window. USD is never a first-class unit.
 export interface BudgetConfig {
-  orgDailyBudget: number
-  perAgentDailyBudget: number
+  orgDailyTokenBudget: number
+  perAgentDailyTokenBudget: number
   alertThreshold: number
 }
 
@@ -108,7 +108,7 @@ export interface BudgetDecision {
 }
 
 export interface PatternAlert {
-  type: 'repeated_failure' | 'cost_spike' | 'reliability_drop'
+  type: 'repeated_failure' | 'token_spike' | 'reliability_drop'
   agentId: string
   details: Record<string, unknown>
   severity: 'warning' | 'critical'
@@ -117,7 +117,7 @@ export interface PatternAlert {
 export interface AgentReliability {
   totalRuns: number
   successRate: number
-  avgCost: number
+  avgTokensPerRun: number
   failureHotspot: { step: string; tool: string; count: number } | null
 }
 

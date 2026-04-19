@@ -17,4 +17,4 @@ export interface ExtractedUsage {
  * @returns Extracted usage or null if the value is not a recognised LLM response.
  */
 export declare function extractUsageFromResult(result: unknown): ExtractedUsage | null;
-//# sourceMappingURL=pricing.d.ts.map
+//# sourceMappingURL=usage-extractor.d.ts.map

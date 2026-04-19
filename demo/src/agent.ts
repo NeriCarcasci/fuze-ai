@@ -10,8 +10,8 @@ export async function runResearchAgent(topic: string): Promise<void> {
   log.header(`Research Agent: "${topic}"`)
   log.info('Starting research pipeline...')
 
-  // Shared run context — all tools share budget, loop detection, and trace
-  const run = createRun('research-agent', { maxCostPerRun: 2.00 })
+  // Shared run context — all tools share the token ceiling, loop detection, and trace
+  const run = createRun('research-agent', { resourceLimits: { maxTokensPerRun: 50_000 } })
 
   const dbQuery = makeDbQuery(run)
   const webSearch = makeWebSearch(run)
@@ -32,11 +32,11 @@ export async function runResearchAgent(topic: string): Promise<void> {
   // Step 3: Search for regulations
   log.step(3, 'Searching for AI safety regulations')
   const search1 = await webSearch('AI safety regulations')
-  log.result(`Found ${search1.results.length} results — auto-extracted cost from usage (${search1.usage.prompt_tokens}+${search1.usage.completion_tokens} tokens)`)
+  log.result(`Found ${search1.results.length} results — tokens auto-extracted from usage (${search1.usage.prompt_tokens} in + ${search1.usage.completion_tokens} out)`)
 
   // Step 4: Search for incidents
-  log.step(4, 'Searching for AI agent cost incidents')
-  const search2 = await webSearch('AI agent cost incidents')
+  log.step(4, 'Searching for AI agent runaway incidents')
+  const search2 = await webSearch('AI agent runaway incidents')
   log.result(`Found ${search2.results.length} results`)
 
   // Step 5: Summarise findings
@@ -83,7 +83,6 @@ export async function runResearchAgent(topic: string): Promise<void> {
   await run.end()
 
   log.header('Agent Complete')
-  log.info(`Total cost: $${status.totalCost.toFixed(6)}`)
   log.info(`Total tokens: ${status.totalTokensIn} in, ${status.totalTokensOut} out`)
   log.info(`Total steps: ${status.stepCount}`)
   log.info(`Emails sent: ${sentEmails.length}`)

@@ -24,6 +24,8 @@ export interface GuardOptions {
         tokensIn: number;
         tokensOut: number;
     } | null;
+    /** Provider-neutral ceilings enforced for the run (steps, tokens, wall-clock). */
+    resourceLimits?: ResourceLimits;
 }
 /**
  * Global Fuze configuration, typically loaded from fuze.toml.
@@ -72,6 +74,8 @@ export interface FuzeConfig {
     project?: {
         projectId?: string;
     };
+    /** Default provider-neutral resource ceilings applied to every run. */
+    resourceLimits?: ResourceLimits;
 }
 /**
  * Fully resolved options after merging defaults, fuze.toml, and per-function guard options.
@@ -93,6 +97,7 @@ export interface ResolvedOptions {
         repeatThreshold: number;
         maxFlatSteps: number;
     };
+    resourceLimits: ResourceLimits;
 }
 /**
  * Record of a single guarded step execution.
@@ -159,6 +164,24 @@ export interface UsageStatus {
     totalTokensIn: number;
     totalTokensOut: number;
     stepCount: number;
+}
+/**
+ * Provider-neutral resource ceilings enforced per run.
+ * USD is intentionally absent: Fuze cannot reliably compute dollar cost.
+ */
+export interface ResourceLimits {
+    /** Maximum number of guarded steps allowed in a run. */
+    maxSteps?: number;
+    /** Maximum combined input+output tokens across the run. */
+    maxTokensPerRun?: number;
+    /** Maximum wall-clock duration in milliseconds across the run. */
+    maxWallClockMs?: number;
+}
+/**
+ * Status returned by ResourceLimitTracker.getStatus().
+ */
+export interface ResourceUsageStatus extends UsageStatus {
+    wallClockMs: number;
 }
 /**
  * Loop detector configuration.

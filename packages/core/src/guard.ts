@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { GuardOptions, ResolvedOptions } from './types.js'
 import { UsageTracker } from './budget-tracker.js'
+import { ResourceLimitTracker } from './resource-limit-tracker.js'
 import { LoopDetector } from './loop-detector.js'
 import { SideEffectRegistry } from './side-effect-registry.js'
 import { TraceRecorder } from './trace-recorder.js'
 import type { FuzeService } from './services/index.js'
-import { extractUsageFromResult } from './pricing.js'
-import { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
+import { extractUsageFromResult } from './usage-extractor.js'
+import { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js'
 
 /**
  * Internal context shared across all guarded functions in a run.
@@ -14,6 +15,7 @@ import { LoopDetected, GuardTimeout, FuzeError } from './errors.js'
 export interface GuardContext {
   runId: string
   usageTracker: UsageTracker
+  resourceLimitTracker: ResourceLimitTracker
   loopDetector: LoopDetector
   sideEffectRegistry: SideEffectRegistry
   traceRecorder: TraceRecorder
@@ -55,6 +57,30 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
       const startedAt = new Date().toISOString()
       const startMs = Date.now()
       const stepNumber = ++context.stepNumber
+
+      try {
+        await context.resourceLimitTracker.checkAndReserveStep(funcName)
+      } catch (limitError) {
+        if (limitError instanceof ResourceLimitExceeded) {
+          context.traceRecorder.recordGuardEvent({
+            eventId: randomUUID(),
+            runId: context.runId,
+            stepId,
+            timestamp: new Date().toISOString(),
+            type: 'kill',
+            severity: 'critical',
+            details: { ...limitError.details },
+          })
+          fireAndForget(context.service.sendGuardEvent(context.runId, {
+            stepId,
+            eventType: 'kill',
+            severity: 'critical',
+            details: { ...limitError.details, cause: 'resource_limit_exceeded' },
+          }))
+          await context.traceRecorder.flush()
+        }
+        throw limitError
+      }
 
       // 1. Check loop detector - Layer 1: iteration cap
       const loopSignal = context.loopDetector.onStep()
@@ -248,6 +274,7 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
         })
 
         context.usageTracker.recordUsage(recordedTokensIn, recordedTokensOut)
+        context.resourceLimitTracker.recordUsage(recordedTokensIn, recordedTokensOut)
 
         // Notify transport of step completion (fire-and-forget)
         fireAndForget(context.service.sendStepEnd(context.runId, stepId, {

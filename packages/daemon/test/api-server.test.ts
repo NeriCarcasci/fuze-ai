@@ -47,7 +47,7 @@ describe('APIServer', () => {
     dbPath = tempDb()
     socketPath = tempSocket()
     runManager = new RunManager()
-    budgetEnforcer = new BudgetEnforcer({ orgDailyBudget: 10, perAgentDailyBudget: 3, alertThreshold: 0.8 })
+    budgetEnforcer = new BudgetEnforcer({ orgDailyTokenBudget: 10000, perAgentDailyTokenBudget: 3000, alertThreshold: 0.8 })
     patternAnalyser = new PatternAnalyser()
     auditStore = new AuditStore(dbPath)
     await auditStore.init()
@@ -85,7 +85,7 @@ describe('APIServer', () => {
     await auditStore.insertRun({
       runId: 'r1', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'completed', startedAt: new Date().toISOString(),
-      totalCost: 0.1, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
     })
     const { body } = await get(`http://127.0.0.1:${TEST_PORT}/api/runs`)
     expect((body as { runs: unknown[] }).runs).toHaveLength(1)
@@ -100,7 +100,7 @@ describe('APIServer', () => {
     await auditStore.insertRun({
       runId: 'r2', agentId: 'a2', agentVersion: '', modelProvider: '', modelName: '',
       status: 'running', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
     })
     const { status, body } = await get(`http://127.0.0.1:${TEST_PORT}/api/runs/r2`)
     expect(status).toBe(200)
@@ -120,11 +120,11 @@ describe('APIServer', () => {
     expect(runManager.getRun('active-run')?.status).toBe('killed')
   })
 
-  it('GET /api/budget returns org and agent spend', async () => {
-    budgetEnforcer.recordSpend('a1', 1.5)
+  it('GET /api/budget returns org and agent token spend', async () => {
+    budgetEnforcer.recordSpend('a1', 1500)
     const { status, body } = await get(`http://127.0.0.1:${TEST_PORT}/api/budget`)
     expect(status).toBe(200)
-    expect((body as { org: { dailySpend: number } }).org.dailySpend).toBeCloseTo(1.5)
+    expect((body as { org: { dailySpend: number } }).org.dailySpend).toBe(1500)
   })
 
   it('GET /api/agents/:id/health returns reliability stats', async () => {
@@ -142,7 +142,7 @@ describe('APIServer', () => {
     await auditStore.insertRun({
       runId: 'r-report', agentId: 'a1', agentVersion: '1.0', modelProvider: 'openai', modelName: 'gpt-4',
       status: 'completed', startedAt: new Date().toISOString(),
-      totalCost: 0.1, totalTokensIn: 100, totalTokensOut: 200, totalSteps: 1, configJson: '{}',
+      totalTokensIn: 100, totalTokensOut: 200, totalSteps: 1, configJson: '{}',
     })
     const { status, body } = await get(`http://127.0.0.1:${TEST_PORT}/api/compliance/report/r-report`)
     expect(status).toBe(200)

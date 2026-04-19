@@ -21,6 +21,8 @@ export interface GuardOptions {
    * Overrides auto-detection for all providers. Return null to skip extraction.
    */
   usageExtractor?: (result: unknown) => { tokensIn: number; tokensOut: number } | null
+  /** Provider-neutral ceilings enforced for the run (steps, tokens, wall-clock). */
+  resourceLimits?: ResourceLimits
 }
 
 /**
@@ -67,6 +69,8 @@ export interface FuzeConfig {
   project?: {
     projectId?: string
   }
+  /** Default provider-neutral resource ceilings applied to every run. */
+  resourceLimits?: ResourceLimits
 }
 
 /**
@@ -86,6 +90,7 @@ export interface ResolvedOptions {
     repeatThreshold: number
     maxFlatSteps: number
   }
+  resourceLimits: ResourceLimits
 }
 
 /**
@@ -161,6 +166,26 @@ export interface UsageStatus {
 }
 
 /**
+ * Provider-neutral resource ceilings enforced per run.
+ * USD is intentionally absent: Fuze cannot reliably compute dollar cost.
+ */
+export interface ResourceLimits {
+  /** Maximum number of guarded steps allowed in a run. */
+  maxSteps?: number
+  /** Maximum combined input+output tokens across the run. */
+  maxTokensPerRun?: number
+  /** Maximum wall-clock duration in milliseconds across the run. */
+  maxWallClockMs?: number
+}
+
+/**
+ * Status returned by ResourceLimitTracker.getStatus().
+ */
+export interface ResourceUsageStatus extends UsageStatus {
+  wallClockMs: number
+}
+
+/**
  * Loop detector configuration.
  */
 export interface LoopDetectorConfig {
@@ -203,4 +228,5 @@ export const DEFAULTS: ResolvedOptions = {
     repeatThreshold: 3,
     maxFlatSteps: 4,
   },
+  resourceLimits: {},
 }

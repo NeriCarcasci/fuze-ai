@@ -4,11 +4,11 @@ interface RunOutcome {
   status: string
   failedAtStep?: string
   failedTool?: string
-  cost: number
+  tokens: number
 }
 
 /**
- * Detects cross-run patterns: repeated failures, cost spikes, reliability drops.
+ * Detects cross-run patterns: repeated failures, token spikes, reliability drops.
  * All analysis is in-memory; only aggregates are stored.
  */
 export class PatternAnalyser {
@@ -26,17 +26,17 @@ export class PatternAnalyser {
    * @param status - Final status of the run.
    * @param failedAtStep - Step identifier where the failure occurred (optional).
    * @param failedTool - Tool name that failed (optional).
-   * @param cost - Total cost of the run (default 0).
+   * @param tokens - Total tokens used by the run (default 0).
    */
   recordRunOutcome(
     agentId: string,
     status: string,
     failedAtStep?: string,
     failedTool?: string,
-    cost = 0,
+    tokens = 0,
   ): void {
     const existing = this.outcomes.get(agentId) ?? []
-    existing.push({ status, failedAtStep, failedTool, cost })
+    existing.push({ status, failedAtStep, failedTool, tokens })
 
     // Touch on write so map order approximates LRU semantics.
     if (this.outcomes.has(agentId)) {
@@ -88,16 +88,16 @@ export class PatternAnalyser {
         })
       }
 
-      // Cost spike: latest run costs > 2x the mean of previous runs
+      // Token spike: latest run uses > 2x the mean of previous runs
       if (runs.length >= 2) {
         const prev = runs.slice(0, -1)
-        const avgPrev = prev.reduce((s, r) => s + r.cost, 0) / prev.length
-        const latest = runs[runs.length - 1].cost
+        const avgPrev = prev.reduce((s, r) => s + r.tokens, 0) / prev.length
+        const latest = runs[runs.length - 1].tokens
         if (avgPrev > 0 && latest > avgPrev * 2) {
           alerts.push({
-            type: 'cost_spike',
+            type: 'token_spike',
             agentId,
-            details: { latestCost: latest, avgPreviousCost: avgPrev, spikeRatio: latest / avgPrev },
+            details: { latestTokens: latest, avgPreviousTokens: avgPrev, spikeRatio: latest / avgPrev },
             severity: 'warning',
           })
         }
@@ -115,11 +115,11 @@ export class PatternAnalyser {
   getAgentReliability(agentId: string): AgentReliability {
     const runs = this.outcomes.get(agentId) ?? []
     if (runs.length === 0) {
-      return { totalRuns: 0, successRate: 1.0, avgCost: 0, failureHotspot: null }
+      return { totalRuns: 0, successRate: 1.0, avgTokensPerRun: 0, failureHotspot: null }
     }
 
     const successes = runs.filter((r) => r.status === 'completed').length
-    const avgCost = runs.reduce((s, r) => s + r.cost, 0) / runs.length
+    const avgTokensPerRun = runs.reduce((s, r) => s + r.tokens, 0) / runs.length
 
     // Find failure hotspot (tool that failed most)
     const toolCounts = new Map<string, { step: string; count: number }>()
@@ -145,7 +145,7 @@ export class PatternAnalyser {
     return {
       totalRuns: runs.length,
       successRate: successes / runs.length,
-      avgCost,
+      avgTokensPerRun,
       failureHotspot,
     }
   }

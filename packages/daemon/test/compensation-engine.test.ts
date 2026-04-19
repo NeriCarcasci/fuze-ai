@@ -29,7 +29,7 @@ async function insertSideEffectRun(
     runId, agentId: 'agent-1', agentVersion: '1.0',
     modelProvider: 'openai', modelName: 'gpt-4',
     status: 'completed', startedAt: new Date().toISOString(),
-    totalCost: 0, totalTokensIn: 0, totalTokensOut: 0,
+    totalTokensIn: 0, totalTokensOut: 0,
     totalSteps: toolNames.length, configJson: '{}',
   })
 
@@ -44,7 +44,7 @@ async function insertSideEffectRun(
       toolName: toolNames[i],
       argsHash: 'abc123',
       hasSideEffect: hasSideEffect ? 1 : 0,
-      costUsd: 0.01, tokensIn: 10, tokensOut: 20,
+      tokensIn: 10, tokensOut: 20,
       latencyMs: 100, error: null,
     })
   }

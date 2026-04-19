@@ -27,7 +27,7 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'r1', agentId: 'a1', agentVersion: '1.0', modelProvider: 'openai',
       modelName: 'gpt-4o', status: 'running', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0,
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0,
       configJson: '{}',
     })
     const run = await store.getRun('r1')
@@ -40,12 +40,12 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'r1', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'running', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
     })
     await store.insertStep({
       stepId: 's1', runId: 'r1', stepNumber: 1, startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(), toolName: 'myTool', argsHash: 'abc123',
-      hasSideEffect: 0, costUsd: 0.01, tokensIn: 100, tokensOut: 50, latencyMs: 200, error: null,
+      hasSideEffect: 0, tokensIn: 100, tokensOut: 50, latencyMs: 200, error: null,
     })
     const steps = await store.getRunSteps('r1')
     expect(steps).toHaveLength(1)
@@ -56,7 +56,7 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'r1', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'running', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
     })
     await store.insertGuardEvent({
       eventId: 'e1', runId: 'r1', timestamp: new Date().toISOString(),
@@ -73,7 +73,7 @@ describe('AuditStore', () => {
         runId: id, agentId: id === 'r1' ? 'agent-x' : 'agent-y',
         agentVersion: '', modelProvider: '', modelName: '',
         status: 'running', startedAt: new Date().toISOString(),
-        totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+        totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
       })
     }
     const runs = await store.listRuns({ agentId: 'agent-x' })
@@ -85,7 +85,7 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'r1', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'running', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
     })
     await store.updateRunStatus('r1', 'completed', 0.5)
     const run = await store.getRun('r1')
@@ -103,7 +103,7 @@ describe('AuditStore', () => {
       await store.insertRun({
         runId: `r${i}`, agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
         status: 'running', startedAt: new Date().toISOString(),
-        totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+        totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
       })
     }
     const result = await store.verifyHashChain()
@@ -115,7 +115,7 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'old-run', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'completed', startedAt: oldDate,
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
     })
     const deleted = await store.purgeOlderThan(90)
     expect(deleted).toBe(1)
@@ -128,7 +128,7 @@ describe('AuditStore', () => {
       await store.insertRun({
         runId: `r${i}`, agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
         status: 'running', startedAt: new Date().toISOString(),
-        totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
+        totalTokensIn: 0, totalTokensOut: 0, totalSteps: 0, configJson: '{}',
       })
     }
     expect(await store.countRuns()).toBe(3)
@@ -139,12 +139,12 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'old-run-2', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'completed', startedAt: oldDate,
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
     })
     await store.insertStep({
       stepId: 's1', runId: 'old-run-2', stepNumber: 1, startedAt: oldDate,
       endedAt: oldDate, toolName: 'tool-a', argsHash: 'abc',
-      hasSideEffect: 1, costUsd: 0, tokensIn: 0, tokensOut: 0, latencyMs: 0, error: null,
+      hasSideEffect: 1, tokensIn: 0, tokensOut: 0, latencyMs: 0, error: null,
     })
     await store.insertCompensationRecord({
       compensationId: 'comp-1', runId: 'old-run-2', stepId: 's1', toolName: 'tool-a',
@@ -171,7 +171,7 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'r-chain', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'completed', startedAt: new Date().toISOString(),
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
     })
     await store.insertCompensationRecord({
       compensationId: 'comp-a', runId: 'r-chain', stepId: 's1', toolName: 'tool-a',
@@ -197,12 +197,12 @@ describe('AuditStore', () => {
     await store.insertRun({
       runId: 'old-run-atomic', agentId: 'a1', agentVersion: '', modelProvider: '', modelName: '',
       status: 'completed', startedAt: oldDate,
-      totalCost: 0, totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
+      totalTokensIn: 0, totalTokensOut: 0, totalSteps: 1, configJson: '{}',
     })
     await store.insertStep({
       stepId: 's-atomic', runId: 'old-run-atomic', stepNumber: 1, startedAt: oldDate,
       endedAt: oldDate, toolName: 'tool-atomic', argsHash: 'atomic',
-      hasSideEffect: 1, costUsd: 0, tokensIn: 0, tokensOut: 0, latencyMs: 0, error: null,
+      hasSideEffect: 1, tokensIn: 0, tokensOut: 0, latencyMs: 0, error: null,
     })
     await store.insertGuardEvent({
       eventId: 'e-atomic', runId: 'old-run-atomic', timestamp: oldDate,

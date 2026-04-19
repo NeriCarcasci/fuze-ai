@@ -5,7 +5,7 @@ Demonstrates how to use the Fuze AI LangGraph adapter to add runtime safety to L
 ## What it demonstrates
 
 - Importing `fuze_tool` from `fuze_ai.adapters.langgraph`
-- `@fuze_tool(max_cost=0.10)` to wrap a tool node with a per-call cost cap
+- `@fuze_tool()` to wrap a tool node with runtime safety; per-run token ceilings come from `configure()`
 - `@fuze_tool(side_effect=True)` to mark a tool node as having real-world side effects
 - A simulated three-step agent loop: search, summarize, notify
 
@@ -40,6 +40,6 @@ Check ./fuze-traces.jsonl for the full trace.
 |---------|----------|--------------|
 | Use case | General Python functions | LangGraph tool nodes |
 | Integration | Standalone | Registers with the LangGraph tool registry |
-| Parameters | Same (`max_cost`, `side_effect`, `compensate`) | Same -- mirrors `@guard` |
+| Parameters | Same (`side_effect`, `compensate`, `timeout`) | Same -- mirrors `@guard` |
 
-The adapter ensures Fuze safety checks (budget, loop detection, side-effect tracking) run inside the LangGraph execution graph, so you get the same protections whether your agent is a simple script or a full LangGraph pipeline.
+The adapter ensures Fuze safety checks (token ceilings, loop detection, side-effect tracking) run inside the LangGraph execution graph, so you get the same protections whether your agent is a simple script or a full LangGraph pipeline.

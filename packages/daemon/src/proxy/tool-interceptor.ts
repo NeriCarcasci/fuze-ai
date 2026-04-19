@@ -17,18 +17,18 @@ class ProxyBudget {
 
   constructor(private readonly ceiling: number) {}
 
-  check(estimatedCost: number, toolName: string): string | null {
-    if (this.spent + estimatedCost > this.ceiling) {
+  check(estimatedTokens: number, toolName: string): string | null {
+    if (this.spent + estimatedTokens > this.ceiling) {
       return (
-        `[fuze] Budget exceeded: tool '${toolName}' estimated $${estimatedCost.toFixed(4)}` +
-        ` but run ceiling is $${this.ceiling.toFixed(2)} (spent $${this.spent.toFixed(4)})`
+        `[fuze] Token budget exceeded: tool '${toolName}' estimated ${estimatedTokens} tokens` +
+        ` but run ceiling is ${this.ceiling} (spent ${this.spent})`
       )
     }
     return null
   }
 
-  record(cost: number): void {
-    this.spent += cost
+  record(tokens: number): void {
+    this.spent += tokens
   }
 
   getSpent(): number {
@@ -84,7 +84,7 @@ interface PendingCall {
   toolName: string
   argsHash: string
   startedAt: number
-  estimatedCost: number
+  estimatedTokens: number
 }
 
 // ── Trace record ──────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ interface TraceStep {
   startedAt: string
   endedAt?: string
   latencyMs?: number
-  estimatedCost: number
+  estimatedTokens: number
   tokensIn?: number
   tokensOut?: number
   blocked: boolean
@@ -121,7 +121,7 @@ interface TraceGuardEvent {
 export interface InterceptResult {
   action: 'forward'
   message: ToolCallMessage
-  estimatedCost: number
+  estimatedTokens: number
   argsHash: string
 }
 
@@ -164,7 +164,7 @@ export class ToolInterceptor {
     private readonly tracePath: string,
   ) {
     this.toolConfig = new ToolConfig(config.tools)
-    this.budget = new ProxyBudget(config.maxCostPerRun)
+    this.budget = new ProxyBudget(config.maxTokensPerRun)
     this.loopDetector = new ProxyLoopDetector(config.maxIterations)
     this.runId = `proxy_${Date.now()}_${randomUUID().slice(0, 8)}`
   }
@@ -182,7 +182,7 @@ export class ToolInterceptor {
   async intercept(message: ToolCallMessage): Promise<InterceptDecision> {
     const { name: toolName, arguments: args } = message.params
     const argsHash = hashArgs(toolName, args)
-    const estimatedCost = this.toolConfig.getToolConfig(toolName).estimatedCost
+    const estimatedTokens = this.toolConfig.getToolConfig(toolName).estimatedTokens
     const stepId = randomUUID()
 
     this.totalCalls++
@@ -241,8 +241,8 @@ export class ToolInterceptor {
       })
     }
 
-    // 4. Budget check
-    const budgetErr = this.budget.check(estimatedCost, toolName)
+    // 4. Token budget check
+    const budgetErr = this.budget.check(estimatedTokens, toolName)
     if (budgetErr) {
       this.blockedCalls++
       void this._appendTrace({
@@ -252,28 +252,27 @@ export class ToolInterceptor {
         toolName,
         timestamp: new Date().toISOString(),
         eventType: 'budget_exceeded',
-        details: { spent: this.budget.getSpent(), ceiling: this.config.maxCostPerRun, estimatedCost },
+        details: { spent: this.budget.getSpent(), ceiling: this.config.maxTokensPerRun, estimatedTokens },
       })
       return this._block(message.id, -32000, budgetErr, {
         fuze_event: 'budget_exceeded',
         tool: toolName,
         spent: this.budget.getSpent(),
-        ceiling: this.config.maxCostPerRun,
+        ceiling: this.config.maxTokensPerRun,
       })
     }
 
     // ✓ Approved — deduct speculatively so concurrent calls can't all sneak under budget
-    this.budget.record(estimatedCost)
+    this.budget.record(estimatedTokens)
 
-    // Record pending call for result tracking (trace written at result time)
     this.pendingCalls.set(message.id, {
       toolName,
       argsHash,
       startedAt: Date.now(),
-      estimatedCost,
+      estimatedTokens,
     })
 
-    return { action: 'forward', message, estimatedCost, argsHash }
+    return { action: 'forward', message, estimatedTokens, argsHash }
   }
 
   /**
@@ -299,17 +298,17 @@ export class ToolInterceptor {
       startedAt: new Date(pending.startedAt).toISOString(),
       endedAt: new Date().toISOString(),
       latencyMs,
-      estimatedCost: pending.estimatedCost,
+      estimatedTokens: pending.estimatedTokens,
       ...(extracted ? { tokensIn: extracted.tokensIn, tokensOut: extracted.tokensOut } : {}),
       blocked: false,
     })
   }
 
   /** Returns current run statistics. */
-  getStats(): { totalCalls: number; totalCost: number; blockedCalls: number } {
+  getStats(): { totalCalls: number; totalTokens: number; blockedCalls: number } {
     return {
       totalCalls: this.totalCalls,
-      totalCost: this.budget.getSpent(),
+      totalTokens: this.budget.getSpent(),
       blockedCalls: this.blockedCalls,
     }
   }

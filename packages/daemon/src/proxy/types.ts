@@ -54,7 +54,7 @@ export interface ToolCallResult {
 // ── Proxy configuration ───────────────────────────────────────────────────────
 
 export interface ProxyConfig {
-  maxCostPerRun: number
+  maxTokensPerRun: number
   maxIterations: number
   tracePath: string
   verbose: boolean
@@ -67,11 +67,12 @@ export interface ProxyToolsConfig {
 }
 
 export interface ToolRawConfig {
-  estimated_cost: number
+  /** Estimated tokens per call. Default 0. */
+  estimated_tokens: number
   side_effect: boolean
   max_calls_per_run: number
   timeout: number
-  /** Model identifier used for actual cost calculation from response usage. */
+  /** Model identifier used for usage accounting from response payloads. */
   model: string
 }
 

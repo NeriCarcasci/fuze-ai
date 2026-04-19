@@ -1,0 +1,1 @@
+{"version":3,"file":"usage-extractor.d.ts","sourceRoot":"","sources":["../src/usage-extractor.ts"],"names":[],"mappings":"AAGA;;GAEG;AACH,MAAM,WAAW,cAAc;IAC7B,QAAQ,EAAE,MAAM,CAAA;IAChB,SAAS,EAAE,MAAM,CAAA;IACjB,kDAAkD;IAClD,KAAK,CAAC,EAAE,MAAM,CAAA;CACf;AAED;;;;;;;;GAQG;AACH,wBAAgB,sBAAsB,CAAC,MAAM,EAAE,OAAO,GAAG,cAAc,GAAG,IAAI,CAqF7E"}

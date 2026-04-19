@@ -195,7 +195,7 @@ export class APIServer {
       return
     }
     this.deps.runManager.killRun(runId, 'Killed via API')
-    void this.deps.auditStore.updateRunStatus(runId, 'killed', run.totalCost)
+    void this.deps.auditStore.updateRunStatus(runId, 'killed')
     this._json(res, 200, { ok: true, runId })
   }
 
@@ -278,7 +278,8 @@ export class APIServer {
         status: run.status,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
-        totalCost: run.totalCost,
+        totalTokensIn: run.totalTokensIn,
+        totalTokensOut: run.totalTokensOut,
         totalSteps: run.totalSteps,
       },
       traceSummary: {
@@ -292,7 +293,8 @@ export class APIServer {
         toolName: s.toolName,
         startedAt: s.startedAt,
         endedAt: s.endedAt,
-        costUsd: s.costUsd,
+        tokensIn: s.tokensIn,
+        tokensOut: s.tokensOut,
         hasSideEffect: s.hasSideEffect === 1,
         error: s.error,
       })),

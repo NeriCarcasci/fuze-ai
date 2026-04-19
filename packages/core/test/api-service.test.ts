@@ -15,7 +15,6 @@ const STEP_END: StepEndData = {
   stepNumber: 1,
   argsHash: 'abc123',
   hasSideEffect: false,
-  costUsd: 0.01,
   tokensIn: 100,
   tokensOut: 50,
   latencyMs: 20,

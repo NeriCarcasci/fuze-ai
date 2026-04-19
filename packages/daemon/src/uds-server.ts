@@ -208,7 +208,6 @@ export class UDSServer {
           status: 'running',
           startedAt,
           endedAt: undefined,
-          totalCost: 0,
           totalTokensIn: 0,
           totalTokensOut: 0,
           totalSteps: 0,
@@ -219,19 +218,20 @@ export class UDSServer {
       }
 
       case 'run_end': {
-        runManager.endRun(msg.runId, msg.status, msg.totalCost)
+        runManager.endRun(msg.runId, msg.status)
         const endedAt = new Date().toISOString()
-        await auditStore.updateRunStatus(msg.runId, msg.status, msg.totalCost, endedAt)
+        await auditStore.updateRunStatus(msg.runId, msg.status, endedAt)
         // Feed pattern analyser with outcome
         const run = runManager.getRun(msg.runId)
         if (run) {
           const lastFailedStep = [...run.steps].reverse().find((s) => s.toolName)
+          const totalTokens = run.totalTokensIn + run.totalTokensOut
           patternAnalyser.recordRunOutcome(
             run.agentId,
             msg.status,
             lastFailedStep?.stepId,
             msg.status !== 'completed' ? lastFailedStep?.toolName : undefined,
-            msg.totalCost,
+            totalTokens,
           )
           const alerts = patternAnalyser.analyse()
           for (const alert of alerts) {
@@ -243,7 +243,7 @@ export class UDSServer {
             })
           }
         }
-        this.onEvent?.('run_end', { runId: msg.runId, status: msg.status, totalCost: msg.totalCost, endedAt })
+        this.onEvent?.('run_end', { runId: msg.runId, status: msg.status, endedAt })
         return null
       }
 
@@ -253,7 +253,7 @@ export class UDSServer {
         const decision = budgetEnforcer.checkBudget(agentId, 0)
         if (decision?.action === 'kill') {
           runManager.killRun(msg.runId, decision.reason)
-          await auditStore.updateRunStatus(msg.runId, 'budget_exceeded', 0)
+          await auditStore.updateRunStatus(msg.runId, 'budget_exceeded')
           alertManager.emit({
             type: 'budget_exceeded',
             severity: 'action',
@@ -292,20 +292,18 @@ export class UDSServer {
         const run = runManager.getRun(msg.runId)
         const agentId = run?.agentId ?? msg.runId
 
-        // Record actual spend
-        budgetEnforcer.recordSpend(agentId, msg.costUsd)
+        const stepTokens = msg.tokensIn + msg.tokensOut
+        budgetEnforcer.recordSpend(agentId, stepTokens)
 
-        // Alert if at budget threshold
         if (budgetEnforcer.isAtAlertThreshold()) {
           alertManager.emit({
             type: 'budget_threshold',
             severity: 'warning',
-            message: `Org budget alert threshold reached`,
+            message: `Org token budget alert threshold reached`,
             details: budgetEnforcer.getOrgSpend(),
           })
         }
 
-        // Record step in RunManager
         if (pending) {
           runManager.recordStep(msg.runId, {
             stepId: msg.stepId,
@@ -314,7 +312,8 @@ export class UDSServer {
             argsHash: pending.argsHash,
             sideEffect: pending.sideEffect,
             startedAt: pending.startedAt,
-            costUsd: msg.costUsd,
+            tokensIn: msg.tokensIn,
+            tokensOut: msg.tokensOut,
           })
         }
 
@@ -326,7 +325,6 @@ export class UDSServer {
             pending.toolName,
             pending.argsHash,
             {
-              costUsd: msg.costUsd,
               tokensIn: msg.tokensIn,
               tokensOut: msg.tokensOut,
               latencyMs: msg.latencyMs,
@@ -335,7 +333,6 @@ export class UDSServer {
           )
         }
 
-        // Persist step to audit store
         const stepEndedAt = new Date().toISOString()
         await auditStore.insertStep({
           stepId: msg.stepId,
@@ -346,7 +343,6 @@ export class UDSServer {
           toolName: pending?.toolName ?? '',
           argsHash: pending?.argsHash ?? '',
           hasSideEffect: pending?.sideEffect ? 1 : 0,
-          costUsd: msg.costUsd,
           tokensIn: msg.tokensIn,
           tokensOut: msg.tokensOut,
           latencyMs: msg.latencyMs,
@@ -357,7 +353,8 @@ export class UDSServer {
           runId: msg.runId,
           stepId: msg.stepId,
           toolName: pending?.toolName ?? '',
-          costUsd: msg.costUsd,
+          tokensIn: msg.tokensIn,
+          tokensOut: msg.tokensOut,
           latencyMs: msg.latencyMs,
           error: msg.error ?? null,
           endedAt: stepEndedAt,

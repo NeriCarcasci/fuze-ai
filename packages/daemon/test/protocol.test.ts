@@ -22,14 +22,14 @@ describe('parseMessage', () => {
   it('parses a valid step_end message', () => {
     const msg = parseMessage(JSON.stringify({
       type: 'step_end', runId: 'r1', stepId: 's1',
-      costUsd: 0.01, tokensIn: 100, tokensOut: 50, latencyMs: 200,
+      tokensIn: 100, tokensOut: 50, latencyMs: 200,
     }))
     expect(msg.type).toBe('step_end')
   })
 
   it('parses a valid run_end message', () => {
     const msg = parseMessage(JSON.stringify({
-      type: 'run_end', runId: 'r1', status: 'completed', totalCost: 0.05,
+      type: 'run_end', runId: 'r1', status: 'completed',
     }))
     expect(msg.type).toBe('run_end')
   })

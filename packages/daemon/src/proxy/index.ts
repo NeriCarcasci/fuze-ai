@@ -57,7 +57,7 @@ export class ProxyRouter {
       const stats = this.interceptor.getStats()
       process.stderr.write(
         `[fuze] Session: ${stats.totalCalls} calls, ` +
-        `${stats.blockedCalls} blocked, $${stats.totalCost.toFixed(4)} spent\n`,
+        `${stats.blockedCalls} blocked, ${stats.totalTokens} tokens spent\n`,
       )
       onServerExit?.(code ?? 0)
     })
@@ -73,7 +73,7 @@ export class ProxyRouter {
     const stats = this.interceptor.getStats()
     process.stderr.write(
       `[fuze] Proxy shutting down — ` +
-      `${stats.totalCalls} calls, ${stats.blockedCalls} blocked, $${stats.totalCost.toFixed(4)} spent\n`,
+      `${stats.totalCalls} calls, ${stats.blockedCalls} blocked, ${stats.totalTokens} tokens spent\n`,
     )
   }
 
@@ -205,7 +205,7 @@ function parseProxyArgs(args: string[]): ProxyConfig {
   }
 
   return {
-    maxCostPerRun: get('--max-cost') != null ? Number(get('--max-cost')) : 10.0,
+    maxTokensPerRun: get('--max-tokens') != null ? Number(get('--max-tokens')) : 100_000,
     maxIterations: get('--max-iterations') != null ? Number(get('--max-iterations')) : 50,
     tracePath: get('--trace') ?? './fuze-proxy-traces.jsonl',
     verbose: args.includes('--verbose'),

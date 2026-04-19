@@ -36,14 +36,13 @@ describe('TraceRecorder', () => {
         toolName: `tool-${i}`,
         argsHash: 'abc123',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 100,
         tokensOut: 50,
         latencyMs: 100,
       })
     }
 
-    recorder.endRun(runId, 'completed', 0.05)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const content = readFileSync(TEST_TRACE_FILE, 'utf-8').trim()
@@ -66,13 +65,12 @@ describe('TraceRecorder', () => {
       toolName: 'search',
       argsHash: 'def456',
       hasSideEffect: false,
-      costUsd: 0.02,
       tokensIn: 200,
       tokensOut: 100,
       latencyMs: 50,
     })
 
-    recorder.endRun(runId, 'completed', 0.02)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const content = readFileSync(TEST_TRACE_FILE, 'utf-8').trim()
@@ -86,7 +84,7 @@ describe('TraceRecorder', () => {
   it('writes valid ISO 8601 timestamps', async () => {
     const runId = randomUUID()
     recorder.startRun(runId, 'test-agent', {})
-    recorder.endRun(runId, 'completed', 0)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const content = readFileSync(TEST_TRACE_FILE, 'utf-8').trim()
@@ -117,7 +115,6 @@ describe('TraceRecorder', () => {
       toolName: 'search',
       argsHash: 'abc',
       hasSideEffect: false,
-      costUsd: 0.01,
       tokensIn: 100,
       tokensOut: 50,
       latencyMs: 50,
@@ -133,7 +130,7 @@ describe('TraceRecorder', () => {
       details: { type: 'max_iterations' },
     })
 
-    recorder.endRun(runId, 'killed', 0.01)
+    recorder.endRun(runId, 'killed')
     await recorder.flush()
 
     const content = readFileSync(TEST_TRACE_FILE, 'utf-8').trim()
@@ -172,14 +169,13 @@ describe('TraceRecorder', () => {
         toolName: `tool-${i}`,
         argsHash: 'chain-hash',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 10,
         tokensOut: 5,
         latencyMs: 20,
       })
     }
 
-    recorder.endRun(runId, 'completed', 0.03)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
@@ -213,13 +209,12 @@ describe('TraceRecorder', () => {
         toolName: `tool-${i + 1}`,
         argsHash: 'hash',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 10,
         tokensOut: 5,
         latencyMs: 10,
       })
     }
-    recorder.endRun(runId, 'completed', 0.08)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
@@ -247,13 +242,12 @@ describe('TraceRecorder', () => {
         toolName: `tool-${i + 1}`,
         argsHash: 'hash',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 10,
         tokensOut: 5,
         latencyMs: 10,
       })
     }
-    recorder.endRun(runId, 'completed', 0.08)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
@@ -282,13 +276,12 @@ describe('TraceRecorder', () => {
         toolName: `tool-${i + 1}`,
         argsHash: 'hash',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 10,
         tokensOut: 5,
         latencyMs: 10,
       })
     }
-    recorder.endRun(runId, 'completed', 0.08)
+    recorder.endRun(runId, 'completed')
     await recorder.flush()
 
     const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
@@ -346,7 +339,6 @@ describe('TraceRecorder', () => {
         toolName: 'same-tool',
         argsHash: 'same-args',
         hasSideEffect: false,
-        costUsd: 0.01,
         tokensIn: 10,
         tokensOut: 5,
         latencyMs: 10,

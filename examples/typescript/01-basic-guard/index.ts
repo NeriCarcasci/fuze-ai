@@ -36,7 +36,7 @@ async function main() {
   console.log('Search "loop":', r3)
 
   console.log('\nAll 3 guarded calls completed.')
-  console.log('Each call was traced with timing, args hash, and cost info.')
+  console.log('Each call was traced with timing, args hash, and token usage.')
   console.log('Check ./fuze-traces.jsonl for the full trace.')
 }
 

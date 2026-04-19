@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS runs (
   status TEXT NOT NULL DEFAULT 'running',
   started_at TEXT NOT NULL,
   ended_at TEXT,
-  total_cost REAL DEFAULT 0,
   total_tokens_in INTEGER DEFAULT 0,
   total_tokens_out INTEGER DEFAULT 0,
   total_steps INTEGER DEFAULT 0,
@@ -56,7 +55,6 @@ CREATE TABLE IF NOT EXISTS steps (
   tool_name TEXT NOT NULL,
   args_hash TEXT NOT NULL,
   has_side_effect INTEGER DEFAULT 0,
-  cost_usd REAL DEFAULT 0,
   tokens_in INTEGER DEFAULT 0,
   tokens_out INTEGER DEFAULT 0,
   latency_ms INTEGER DEFAULT 0,
@@ -146,7 +144,7 @@ export class AuditStore {
   async insertRun(run: Omit<RunRecord, 'prevHash' | 'hash'>): Promise<void> {
     const prevHash = this.lastRunHash
     // Hash over immutable fields only (snake_case, matching DB column names).
-    // Mutable fields (status, total_cost, ended_at, etc.) are excluded so that
+    // Mutable fields (status, ended_at, etc.) are excluded so that
     // updateRunStatus does not break the hash chain.
     const colFields = {
       run_id: run.runId, agent_id: run.agentId, agent_version: run.agentVersion,
@@ -156,12 +154,12 @@ export class AuditStore {
     const hash = hashRecord(prevHash, colFields as Record<string, unknown>)
     this.db.prepare(
       `INSERT INTO runs (run_id, agent_id, agent_version, model_provider, model_name, status,
-       started_at, ended_at, total_cost, total_tokens_in, total_tokens_out, total_steps,
-       config_json, prev_hash, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+       started_at, ended_at, total_tokens_in, total_tokens_out, total_steps,
+       config_json, prev_hash, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       run.runId, run.agentId, run.agentVersion, run.modelProvider, run.modelName,
       run.status, run.startedAt, run.endedAt ?? null,
-      run.totalCost, run.totalTokensIn, run.totalTokensOut, run.totalSteps,
+      run.totalTokensIn, run.totalTokensOut, run.totalSteps,
       run.configJson, prevHash, hash,
     )
     this.lastRunHash = hash
@@ -174,18 +172,18 @@ export class AuditStore {
       started_at: step.startedAt, ended_at: step.endedAt ?? null,
       tool_name: step.toolName, args_hash: step.argsHash,
       has_side_effect: step.hasSideEffect ? 1 : 0,
-      cost_usd: step.costUsd, tokens_in: step.tokensIn, tokens_out: step.tokensOut,
+      tokens_in: step.tokensIn, tokens_out: step.tokensOut,
       latency_ms: step.latencyMs, error: step.error ?? null,
     }
     const hash = hashRecord(prevHash, colFields as Record<string, unknown>)
     this.db.prepare(
       `INSERT INTO steps (step_id, run_id, step_number, started_at, ended_at, tool_name, args_hash,
-       has_side_effect, cost_usd, tokens_in, tokens_out, latency_ms, error, prev_hash, hash)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+       has_side_effect, tokens_in, tokens_out, latency_ms, error, prev_hash, hash)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(
       step.stepId, step.runId, step.stepNumber, step.startedAt, step.endedAt ?? null,
       step.toolName, step.argsHash, step.hasSideEffect ? 1 : 0,
-      step.costUsd, step.tokensIn, step.tokensOut, step.latencyMs,
+      step.tokensIn, step.tokensOut, step.latencyMs,
       step.error ?? null, prevHash, hash,
     )
     this.lastStepHash = hash
@@ -209,10 +207,10 @@ export class AuditStore {
     this.lastEventHash = hash
   }
 
-  async updateRunStatus(runId: string, status: string, totalCost: number, endedAt?: string): Promise<void> {
+  async updateRunStatus(runId: string, status: string, endedAt?: string): Promise<void> {
     this.db.prepare(
-      `UPDATE runs SET status = ?, total_cost = ?, ended_at = ? WHERE run_id = ?`
-    ).run(status, totalCost, endedAt ?? new Date().toISOString(), runId)
+      `UPDATE runs SET status = ?, ended_at = ? WHERE run_id = ?`
+    ).run(status, endedAt ?? new Date().toISOString(), runId)
   }
 
   async getRun(runId: string): Promise<RunRecord | null> {
@@ -264,7 +262,7 @@ export class AuditStore {
    */
   async verifyHashChain(): Promise<{ valid: boolean; brokenAt?: string }> {
     // Verify runs chain — only immutable fields are hashed (mutable fields like
-    // status/total_cost/ended_at are excluded to allow updateRunStatus without breaking the chain)
+    // status/ended_at are excluded to allow updateRunStatus without breaking the chain)
     const runs = this.db.prepare('SELECT * FROM runs ORDER BY rowid').all() as Record<string, unknown>[]
     let prev = 'genesis'
     for (const row of runs) {
@@ -438,7 +436,6 @@ export class AuditStore {
       status: row['status'] as string,
       startedAt: row['started_at'] as string,
       endedAt: row['ended_at'] as string | undefined,
-      totalCost: row['total_cost'] as number,
       totalTokensIn: row['total_tokens_in'] as number,
       totalTokensOut: row['total_tokens_out'] as number,
       totalSteps: row['total_steps'] as number,
@@ -458,7 +455,6 @@ export class AuditStore {
       toolName: row['tool_name'] as string,
       argsHash: row['args_hash'] as string,
       hasSideEffect: row['has_side_effect'] as number,
-      costUsd: row['cost_usd'] as number,
       tokensIn: row['tokens_in'] as number,
       tokensOut: row['tokens_out'] as number,
       latencyMs: row['latency_ms'] as number,

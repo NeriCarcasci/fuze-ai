@@ -3,3 +3,7 @@ node_modules/
 examples\local-setup.sh
 .fuze/audit.key
 audit.key
+
+# Local working context (never committed)
+.context/
+.claude/

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigLoader } from './config-loader.js';
 import { UsageTracker } from './budget-tracker.js';
+import { ResourceLimitTracker } from './resource-limit-tracker.js';
 import { LoopDetector } from './loop-detector.js';
 import { SideEffectRegistry } from './side-effect-registry.js';
 import { TraceRecorder } from './trace-recorder.js';
@@ -35,8 +36,9 @@ function mergeConfigs(base, override) {
         usageExtractor: override.usageExtractor ?? base.usageExtractor,
     };
 }
-export { LoopDetected, GuardTimeout, FuzeError } from './errors.js';
-export { extractUsageFromResult } from './pricing.js';
+export { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js';
+export { ResourceLimitTracker } from './resource-limit-tracker.js';
+export { extractUsageFromResult } from './usage-extractor.js';
 export { TraceRecorder, verifyChain } from './trace-recorder.js';
 export { createService, ApiService, DaemonService, NoopService } from './services/index.js';
 // Global configuration state
@@ -115,6 +117,7 @@ export function guard(fn, options) {
     const context = {
         runId,
         usageTracker: new UsageTracker(),
+        resourceLimitTracker: new ResourceLimitTracker(resolved.resourceLimits),
         loopDetector: new LoopDetector({
             ...resolved.loopDetection,
             maxIterations: resolved.maxIterations,
@@ -159,6 +162,7 @@ export function createRun(agentId = 'default', options) {
     const context = {
         runId,
         usageTracker: new UsageTracker(),
+        resourceLimitTracker: new ResourceLimitTracker(resolved.resourceLimits),
         loopDetector: new LoopDetector({
             ...resolved.loopDetection,
             maxIterations: resolved.maxIterations,

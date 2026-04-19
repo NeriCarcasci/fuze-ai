@@ -1,9 +1,10 @@
 import type { FuzeConfig, GuardOptions, RunContext } from './types.js';
 import type { ToolRegistration } from './services/index.js';
-export type { GuardOptions, FuzeConfig, RunContext } from './types.js';
-export { LoopDetected, GuardTimeout, FuzeError } from './errors.js';
-export { extractUsageFromResult } from './pricing.js';
-export type { ExtractedUsage } from './pricing.js';
+export type { GuardOptions, FuzeConfig, RunContext, ResourceLimits, ResourceUsageStatus, UsageStatus } from './types.js';
+export { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js';
+export { ResourceLimitTracker } from './resource-limit-tracker.js';
+export { extractUsageFromResult } from './usage-extractor.js';
+export type { ExtractedUsage } from './usage-extractor.js';
 export { TraceRecorder, verifyChain } from './trace-recorder.js';
 export type { TraceEntry, SignedTraceEntry, VerifyChainResult } from './trace-recorder.js';
 export type { FuzeService, ToolRegistration, ToolConfig } from './services/index.js';

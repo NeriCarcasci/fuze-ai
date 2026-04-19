@@ -1,20 +1,20 @@
 import type { ProxyToolsConfig, ToolRawConfig } from './types.js'
 
 export interface ResolvedToolConfig {
-  /** Estimated USD cost per call. Default: 0.01. */
-  estimatedCost: number
+  /** Estimated tokens per call. Default: 0. */
+  estimatedTokens: number
   /** Whether this tool has side effects. Default: false. */
   sideEffect: boolean
   /** Maximum number of calls per run. Default: Infinity. */
   maxCallsPerRun: number
   /** Timeout in ms. Default: 30000. */
   timeout: number
-  /** Model identifier for actual cost calculation from response usage. */
+  /** Model identifier for usage accounting from response payloads. */
   model?: string
 }
 
 const BUILTIN_DEFAULTS: ResolvedToolConfig = {
-  estimatedCost: 0.01,
+  estimatedTokens: 0,
   sideEffect: false,
   maxCallsPerRun: Infinity,
   timeout: 30_000,
@@ -29,18 +29,15 @@ const BUILTIN_DEFAULTS: ResolvedToolConfig = {
 export class ToolConfig {
   constructor(private readonly config: ProxyToolsConfig = {}) {}
 
-  /**
-   * Returns fully resolved config for a given tool name.
-   */
   getToolConfig(toolName: string): ResolvedToolConfig {
     const raw = this.config[toolName] as Partial<ToolRawConfig> | undefined
     const defaults = this.config['default'] as Partial<ToolRawConfig> | undefined
 
     return {
-      estimatedCost:
-        raw?.estimated_cost
-        ?? defaults?.estimated_cost
-        ?? BUILTIN_DEFAULTS.estimatedCost,
+      estimatedTokens:
+        raw?.estimated_tokens
+        ?? defaults?.estimated_tokens
+        ?? BUILTIN_DEFAULTS.estimatedTokens,
       sideEffect:
         raw?.side_effect
         ?? defaults?.side_effect
@@ -60,9 +57,6 @@ export class ToolConfig {
     }
   }
 
-  /**
-   * Returns true if the tool is marked as having side effects.
-   */
   isSideEffect(toolName: string): boolean {
     return this.getToolConfig(toolName).sideEffect
   }

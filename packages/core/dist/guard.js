@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { extractUsageFromResult } from './pricing.js';
-import { LoopDetected, GuardTimeout, FuzeError } from './errors.js';
+import { extractUsageFromResult } from './usage-extractor.js';
+import { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js';
 /**
  * Creates the guard wrapper function bound to a specific run context.
  * @param resolvedOpts - Fully resolved options for this run.
@@ -29,6 +29,30 @@ export function createGuardWrapper(resolvedOpts, context) {
             const startedAt = new Date().toISOString();
             const startMs = Date.now();
             const stepNumber = ++context.stepNumber;
+            try {
+                await context.resourceLimitTracker.checkAndReserveStep(funcName);
+            }
+            catch (limitError) {
+                if (limitError instanceof ResourceLimitExceeded) {
+                    context.traceRecorder.recordGuardEvent({
+                        eventId: randomUUID(),
+                        runId: context.runId,
+                        stepId,
+                        timestamp: new Date().toISOString(),
+                        type: 'kill',
+                        severity: 'critical',
+                        details: { ...limitError.details },
+                    });
+                    fireAndForget(context.service.sendGuardEvent(context.runId, {
+                        stepId,
+                        eventType: 'kill',
+                        severity: 'critical',
+                        details: { ...limitError.details, cause: 'resource_limit_exceeded' },
+                    }));
+                    await context.traceRecorder.flush();
+                }
+                throw limitError;
+            }
             // 1. Check loop detector - Layer 1: iteration cap
             const loopSignal = context.loopDetector.onStep();
             if (loopSignal) {
@@ -210,6 +234,7 @@ export function createGuardWrapper(resolvedOpts, context) {
                     error,
                 });
                 context.usageTracker.recordUsage(recordedTokensIn, recordedTokensOut);
+                context.resourceLimitTracker.recordUsage(recordedTokensIn, recordedTokensOut);
                 // Notify transport of step completion (fire-and-forget)
                 fireAndForget(context.service.sendStepEnd(context.runId, stepId, {
                     toolName: funcName,

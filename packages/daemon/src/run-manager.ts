@@ -39,7 +39,8 @@ export class RunManager {
       modelName: opts.modelName ?? 'unknown',
       status: 'running',
       startedAt: new Date().toISOString(),
-      totalCost: 0,
+      totalTokensIn: 0,
+      totalTokensOut: 0,
       totalSteps: 0,
       steps: [],
       guardEvents: [],
@@ -54,12 +55,13 @@ export class RunManager {
    * @param step - Step data to record.
    * @throws Error if the run does not exist.
    */
-  recordStep(runId: string, step: StepData & { costUsd?: number }): void {
+  recordStep(runId: string, step: StepData & { tokensIn?: number; tokensOut?: number }): void {
     const run = this.runs.get(runId)
     if (!run) throw new Error(`RunManager: unknown run '${runId}'`)
     run.steps.push(step)
     run.totalSteps++
-    run.totalCost += step.costUsd ?? 0
+    run.totalTokensIn += step.tokensIn ?? 0
+    run.totalTokensOut += step.tokensOut ?? 0
   }
 
   /**
@@ -79,13 +81,11 @@ export class RunManager {
    *
    * @param runId - Run identifier.
    * @param status - Final status.
-   * @param totalCost - Total USD cost reported by the SDK.
    */
-  endRun(runId: string, status: string, totalCost: number): void {
+  endRun(runId: string, status: string): void {
     const run = this.runs.get(runId)
     if (!run) return
     run.status = status as RunState['status']
-    run.totalCost = totalCost
     this.runs.delete(runId)
     this.endedRuns.set(runId, run)
     this.trimEndedRuns()

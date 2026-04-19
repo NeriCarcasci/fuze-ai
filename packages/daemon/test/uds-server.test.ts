@@ -63,7 +63,7 @@ describe('UDSServer', () => {
 
     server = new UDSServer(socketPath, {
       runManager: new RunManager(),
-      budgetEnforcer: new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 }),
+      budgetEnforcer: new BudgetEnforcer({ orgDailyTokenBudget: 100000, perAgentDailyTokenBudget: 20000, alertThreshold: 0.8 }),
       patternAnalyser,
       auditStore,
       alertManager: new AlertManager({ dedupWindowMs: 0, webhookUrls: [] }),
@@ -91,7 +91,7 @@ describe('UDSServer', () => {
     fs.writeFileSync(stalePath, 'stale')
     const s2 = new UDSServer(stalePath, {
       runManager: new RunManager(),
-      budgetEnforcer: new BudgetEnforcer({ orgDailyBudget: 100, perAgentDailyBudget: 20, alertThreshold: 0.8 }),
+      budgetEnforcer: new BudgetEnforcer({ orgDailyTokenBudget: 100000, perAgentDailyTokenBudget: 20000, alertThreshold: 0.8 }),
       patternAnalyser: new PatternAnalyser(),
       auditStore,
       alertManager: new AlertManager({ dedupWindowMs: 0, webhookUrls: [] }),
@@ -184,10 +184,10 @@ describe('UDSServer', () => {
     }))
     await sendLine(socketPath, JSON.stringify({
       type: 'step_end', runId: 'r-pattern', stepId: 'step-42',
-      costUsd: 1.23, tokensIn: 10, tokensOut: 20, latencyMs: 33,
+      tokensIn: 10, tokensOut: 20, latencyMs: 33,
     }))
     await sendLine(socketPath, JSON.stringify({
-      type: 'run_end', runId: 'r-pattern', status: 'failed', totalCost: 1.23,
+      type: 'run_end', runId: 'r-pattern', status: 'failed',
     }))
 
     expect(outcomeSpy).toHaveBeenCalledWith(
@@ -195,7 +195,7 @@ describe('UDSServer', () => {
       'failed',
       'step-42',
       'dangerous_tool',
-      1.23,
+      30,
     )
   })
 

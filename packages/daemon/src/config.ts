@@ -19,8 +19,8 @@ const DEFAULTS: DaemonConfig = {
   storagePath: path.join(os.homedir(), '.fuze', 'audit.db'),
   retentionDays: 90,
   budget: {
-    orgDailyBudget: 100,
-    perAgentDailyBudget: 20,
+    orgDailyTokenBudget: 10_000_000,
+    perAgentDailyTokenBudget: 2_000_000,
     alertThreshold: 0.8,
   },
   alerts: {
@@ -58,12 +58,12 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     storagePath: (daemon['storage_path'] as string | undefined) ?? DEFAULTS.storagePath,
     retentionDays: (daemon['retention_days'] as number | undefined) ?? DEFAULTS.retentionDays,
     budget: {
-      orgDailyBudget:
-        ((daemon['budget'] as Record<string, unknown> | undefined)?.['org_daily_budget'] as number | undefined)
-        ?? DEFAULTS.budget.orgDailyBudget,
-      perAgentDailyBudget:
-        ((daemon['budget'] as Record<string, unknown> | undefined)?.['per_agent_daily_budget'] as number | undefined)
-        ?? DEFAULTS.budget.perAgentDailyBudget,
+      orgDailyTokenBudget:
+        ((daemon['budget'] as Record<string, unknown> | undefined)?.['org_daily_token_budget'] as number | undefined)
+        ?? DEFAULTS.budget.orgDailyTokenBudget,
+      perAgentDailyTokenBudget:
+        ((daemon['budget'] as Record<string, unknown> | undefined)?.['per_agent_daily_token_budget'] as number | undefined)
+        ?? DEFAULTS.budget.perAgentDailyTokenBudget,
       alertThreshold:
         ((daemon['budget'] as Record<string, unknown> | undefined)?.['alert_threshold'] as number | undefined)
         ?? DEFAULTS.budget.alertThreshold,

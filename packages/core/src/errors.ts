@@ -45,3 +45,24 @@ export class GuardTimeout extends FuzeError {
     this.timeoutMs = timeoutMs
   }
 }
+
+export type ResourceLimitKind = 'maxSteps' | 'maxTokensPerRun' | 'maxWallClockMs'
+
+export interface ResourceLimitExceededDetails {
+  toolName: string
+  limit: ResourceLimitKind
+  ceiling: number
+  observed: number
+}
+
+export class ResourceLimitExceeded extends FuzeError {
+  readonly details: ResourceLimitExceededDetails
+
+  constructor(details: ResourceLimitExceededDetails) {
+    super(
+      `ResourceLimitExceeded: step '${details.toolName}' exceeded ${details.limit} (observed ${details.observed}, ceiling ${details.ceiling})`,
+    )
+    this.name = 'ResourceLimitExceeded'
+    this.details = details
+  }
+}

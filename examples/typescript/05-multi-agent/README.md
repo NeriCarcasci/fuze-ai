@@ -1,45 +1,45 @@
-# 05 - Multi-Agent Shared Budget
+# 05 - Multi-Agent Shared Token Ceiling
 
-Demonstrates two agents (researcher + writer) sharing a single budget via
-`createRun()`. All tool calls from both agents are tracked under one run
-context with unified cost accounting.
+Demonstrates two agents (researcher + writer) sharing a single token ceiling
+via `createRun()`. All tool calls from both agents are tracked under one run
+context with unified token accounting.
 
 ## What this example shows
 
-1. **Shared run context** -- `createRun('research-team', { maxCostPerRun: 5.00 })`
-   creates a run that both agents share. Every call to `run.guard(fn)` draws
-   from the same $5.00 budget.
+1. **Shared run context** -- `createRun('research-team')` creates a run that
+   both agents share. The session-wide `resourceLimits.maxTokensPerRun` ceiling
+   is applied across every call from every agent in that run.
 
 2. **Researcher agent** calls `webSearch` and `summarise`, each wrapped with
-   `run.guard()` and tagged with a model for cost tracking. Fuze auto-extracts
-   cost from the OpenAI-shaped usage data returned by each call.
+   `run.guard()`. Fuze auto-extracts `tokensIn`/`tokensOut` from the
+   OpenAI-shaped `usage` object returned by each call.
 
 3. **Writer agent** calls `draft` and `editDraft` using the same run. If the
-   researcher already spent most of the budget, the writer's calls may trigger
-   `BudgetExceeded`.
+   researcher has already consumed most of the token ceiling, the writer's
+   calls may trigger `ResourceLimitExceeded`.
 
-4. **`run.getStatus()`** returns the aggregated cost, token counts, and step
-   count across both agents.
+4. **`run.getStatus()`** returns `totalTokensIn`, `totalTokensOut`, and
+   `stepCount` across both agents.
 
 5. **`run.end()`** flushes the trace log and marks the run as completed.
 
 ## Key API
 
 ```ts
-import { createRun } from 'fuze-ai'
+import { configure, createRun } from 'fuze-ai'
 
-const run = createRun('research-team', { maxCostPerRun: 5.00 })
+configure({ resourceLimits: { maxTokensPerRun: 50_000 } })
 
-// model tells Fuze which pricing table to use;
-// cost is auto-extracted from the OpenAI-shaped usage data in the response.
-const search = run.guard(webSearch, {
-  model: 'openai/gpt-4o',
-})
+const run = createRun('research-team')
+
+// tokensIn/tokensOut are auto-extracted from the OpenAI-shaped usage data
+// on the return value. No model or pricing configuration needed.
+const search = run.guard(webSearch)
 
 await search('query')
 
 console.log(run.getStatus())
-// { totalCost: 0.0033, totalTokensIn: 500, totalTokensOut: 200, stepCount: 1 }
+// { totalTokensIn: 500, totalTokensOut: 200, stepCount: 1 }
 
 await run.end()
 ```
@@ -56,21 +56,23 @@ npm start
 ```
 Fuze AI -- Multi-Agent Shared Budget
 
-Run ID: <uuid>
+Run ID : <uuid>
+Ceiling: 50,000 tokens (shared across all agents)
 
 === Researcher Agent ===
-Search results: [ '[1] "AI agent safety frameworks" -- Wikipedia overview', ... ]
-Summary: Summary of 3 sources: ...
+Search results: ['[guard.ts] 362 lines -- contains "budget"', ...]
+Summary: Found "N" matching files: ...
+  [after researcher: 6300 tokens across 2 steps]
 
 === Writer Agent ===
-Draft: [Draft -- professional] ...
-Edited: [Draft -- professional] ...
+Draft: [Draft-<hash> | tone=technical] ...
+Edited: [Draft-<hash> | tone=technical] ...
 
 === Run Status ===
-  Total cost:      $0.0xxx
-  Total tokens in: 5000
-  Total tokens out:3000
+  Tokens in      : 11000
+  Tokens out     : 4800
   Steps completed: 4
+  Remaining       : 34200 tokens
 
 Run ended. Check ./fuze-traces.jsonl for the full trace.
 ```

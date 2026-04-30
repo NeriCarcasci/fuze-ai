@@ -1,0 +1,8 @@
+{
+  "name": "01-basic-guard",
+  "description": "Single guarded function called twice with the same args",
+  "steps": [
+    { "tool": "echo", "args": ["hello"], "tokensIn": 10, "tokensOut": 5 },
+    { "tool": "echo", "args": ["hello"], "tokensIn": 10, "tokensOut": 5 }
+  ]
+}

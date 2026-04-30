@@ -165,12 +165,13 @@ class TraceRecorder:
         })
 
     def record_step(self, step: StepRecord) -> None:
-        """Record a step execution.
-
-        Args:
-            step: The step record to log.
-        """
-        self._append_signed_entry({"record_type": "step", **step})
+        # JS omits `error` from the JSON when there is no error (undefined is
+        # not serialized). Match that on the Python side so the on-disk shape
+        # is byte-equal for the no-error case. See .context/parity.md.
+        entry: dict[str, Any] = {"record_type": "step", **step}
+        if entry.get("error") is None:
+            entry.pop("error", None)
+        self._append_signed_entry(entry)
 
     def record_guard_event(self, event: GuardEventRecord) -> None:
         """Record a guard event (loop detected, budget exceeded, etc.).

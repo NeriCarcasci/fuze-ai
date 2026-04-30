@@ -20,6 +20,9 @@ Tests live in `test/`, source in `src/`, build output in `dist/` (gitignored).
 Current public surface (must mirror `packages/python/src/fuze_ai/__init__.py`):
 
 - `guard(fn, options?)` — HOF wrapper
+- `guardMethod` — TC39 stage-3 method decorator (bare or factory form `@guardMethod({...})`)
+- `guarded` — class decorator that wraps every async/sync own-method (bare or factory form `@guarded({...})`); has a Python counterpart
+- `guardAll(obj, perMethodOpts?)` — Proxy-based runtime wrapping; **JS only by design** (no Python equivalent — see `.context/parity.md`)
 - `createRun(agentId?, options?)` — returns run context
 - `configure(config)` / `resetConfig()`
 - `registerTools(tools)`
@@ -27,6 +30,8 @@ Current public surface (must mirror `packages/python/src/fuze_ai/__init__.py`):
 - `verifyChain(...)`
 - Errors: `LoopDetected`, `GuardTimeout`, `ResourceLimitExceeded`, `FuzeError`
 - Types: `GuardOptions`, `FuzeConfig`, `RunContext`, `ResourceLimits`, `ResourceUsageStatus`, `ExtractedUsage`
+
+Decorator runtime: TC39 stage-3 (TS 5+, default semantics — no `experimentalDecorators`). Async-local context propagation via `node:async_hooks`. Internal `this.method()` calls inside a `@guarded` instance record as steps in the same run; external calls open fresh runs. `guardAll` Proxy binds `this` to the original receiver so internal calls do NOT recurse through the Proxy (deliberate divergence from `@guarded` — see decorator tests).
 
 ## Conventions specific to this package
 

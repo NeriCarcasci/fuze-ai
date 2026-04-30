@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import hashlib
 import inspect
@@ -34,7 +35,14 @@ def _hash_args(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     def _typed_default(value: Any) -> str:
         return f"{type(value).__name__}:{value}"
 
-    payload = json.dumps({"args": args, "kwargs": kwargs}, default=_typed_default, sort_keys=True)
+    # Compact separators (no spaces) to match JSON.stringify output in JS.
+    # See packages/core/src/guard.ts hashArgs.
+    payload = json.dumps(
+        {"args": list(args), "kwargs": kwargs},
+        default=_typed_default,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
@@ -117,6 +125,11 @@ class GuardContext:
     step_number: int = field(default=0)
 
 
+current_guard_context: contextvars.ContextVar[Optional[GuardContext]] = contextvars.ContextVar(
+    "fuze_current_guard_context", default=None
+)
+
+
 def _record_limit_event(
     ctx: GuardContext,
     step_id: str,
@@ -155,18 +168,18 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
     if opts.get("compensate"):
         ctx.side_effect_registry.register_compensation(func_name, opts["compensate"])
 
-    def _handle_loop_signal(signal: Any, step_id: str) -> None:
-        ctx.trace_recorder.record_guard_event(GuardEventRecord(
+    def _handle_loop_signal(active_ctx: GuardContext, signal: Any, step_id: str) -> None:
+        active_ctx.trace_recorder.record_guard_event(GuardEventRecord(
             event_id=str(uuid.uuid4()),
-            run_id=ctx.run_id,
+            run_id=active_ctx.run_id,
             step_id=step_id,
             timestamp=_now_iso(),
             type="loop_detected",
             severity="critical",
             details=signal["details"],
         ))
-        _fire_and_forget(ctx.service.send_guard_event(
-            ctx.run_id,
+        _fire_and_forget(active_ctx.service.send_guard_event(
+            active_ctx.run_id,
             {
                 "step_id": step_id,
                 "event_type": "loop_detected",
@@ -175,12 +188,13 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
             },
         ))
         if opts["on_loop"] == "kill":
-            ctx.trace_recorder.flush()
+            active_ctx.trace_recorder.flush()
             raise LoopDetected(signal, func_name)
 
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            active_ctx = current_guard_context.get() or ctx
             step_id = str(uuid.uuid4())
             args_hash = _hash_args(args, kwargs)
             start_time = time.monotonic()
@@ -189,28 +203,28 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
             result: Any = None
 
             try:
-                await ctx.resource_limit_tracker.check_and_reserve_step(func_name)
+                await active_ctx.resource_limit_tracker.check_and_reserve_step(func_name)
             except ResourceLimitExceeded as err:
-                _record_limit_event(ctx, step_id, err)
+                _record_limit_event(active_ctx, step_id, err)
                 raise
 
-            ctx.step_number += 1
-            step_number = ctx.step_number
+            active_ctx.step_number += 1
+            step_number = active_ctx.step_number
 
-            loop_signal = ctx.loop_detector.on_step()
+            loop_signal = active_ctx.loop_detector.on_step()
             if loop_signal:
-                _handle_loop_signal(loop_signal, step_id)
+                _handle_loop_signal(active_ctx, loop_signal, step_id)
                 if opts["on_loop"] == "skip":
                     return None
 
-            tool_signal = ctx.loop_detector.on_tool_call(f"{func_name}:{args_hash}")
+            tool_signal = active_ctx.loop_detector.on_tool_call(f"{func_name}:{args_hash}")
             if tool_signal:
-                _handle_loop_signal(tool_signal, step_id)
+                _handle_loop_signal(active_ctx, tool_signal, step_id)
                 if opts["on_loop"] == "skip":
                     return None
 
-            decision = await ctx.service.send_step_start(
-                ctx.run_id,
+            decision = await active_ctx.service.send_step_start(
+                active_ctx.run_id,
                 {
                     "step_id": step_id,
                     "step_number": step_number,
@@ -242,9 +256,9 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                     actual_tokens_in = 0
                     actual_tokens_out = 0
 
-                ctx.trace_recorder.record_step(StepRecord(
+                active_ctx.trace_recorder.record_step(StepRecord(
                     step_id=step_id,
-                    run_id=ctx.run_id,
+                    run_id=active_ctx.run_id,
                     step_number=step_number,
                     started_at=started_at,
                     ended_at=ended_at,
@@ -256,9 +270,9 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                     latency_ms=latency_ms,
                     error=error_msg,
                 ))
-                ctx.resource_limit_tracker.record_usage(actual_tokens_in, actual_tokens_out)
-                _fire_and_forget(ctx.service.send_step_end(
-                    ctx.run_id,
+                active_ctx.resource_limit_tracker.record_usage(actual_tokens_in, actual_tokens_out)
+                _fire_and_forget(active_ctx.service.send_step_end(
+                    active_ctx.run_id,
                     step_id,
                     {
                         "tool_name": func_name,
@@ -273,19 +287,19 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                 ))
 
             has_new_output = result is not None
-            progress_signal = ctx.loop_detector.on_progress(has_new_output)
+            progress_signal = active_ctx.loop_detector.on_progress(has_new_output)
             if progress_signal:
-                ctx.trace_recorder.record_guard_event(GuardEventRecord(
+                active_ctx.trace_recorder.record_guard_event(GuardEventRecord(
                     event_id=str(uuid.uuid4()),
-                    run_id=ctx.run_id,
+                    run_id=active_ctx.run_id,
                     step_id=step_id,
                     timestamp=_now_iso(),
                     type="loop_detected",
                     severity="warning",
                     details=progress_signal["details"],
                 ))
-                _fire_and_forget(ctx.service.send_guard_event(
-                    ctx.run_id,
+                _fire_and_forget(active_ctx.service.send_guard_event(
+                    active_ctx.run_id,
                     {
                         "step_id": step_id,
                         "event_type": "loop_detected",
@@ -294,11 +308,11 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                     },
                 ))
                 if opts["on_loop"] == "kill":
-                    ctx.trace_recorder.flush()
+                    active_ctx.trace_recorder.flush()
                     raise LoopDetected(progress_signal, func_name)
 
             if opts.get("side_effect"):
-                ctx.side_effect_registry.record_side_effect(step_id, func_name, result)
+                active_ctx.side_effect_registry.record_side_effect(step_id, func_name, result)
 
             return result
 
@@ -306,6 +320,7 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
 
     @functools.wraps(fn)
     def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+        active_ctx = current_guard_context.get() or ctx
         step_id = str(uuid.uuid4())
         args_hash = _hash_args(args, kwargs)
         start_time = time.monotonic()
@@ -314,29 +329,29 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
         result: Any = None
 
         try:
-            ctx.resource_limit_tracker.check_and_reserve_step_sync(func_name)
+            active_ctx.resource_limit_tracker.check_and_reserve_step_sync(func_name)
         except ResourceLimitExceeded as err:
-            _record_limit_event(ctx, step_id, err)
+            _record_limit_event(active_ctx, step_id, err)
             raise
 
-        ctx.step_number += 1
-        step_number = ctx.step_number
+        active_ctx.step_number += 1
+        step_number = active_ctx.step_number
 
-        loop_signal = ctx.loop_detector.on_step()
+        loop_signal = active_ctx.loop_detector.on_step()
         if loop_signal:
-            _handle_loop_signal(loop_signal, step_id)
+            _handle_loop_signal(active_ctx, loop_signal, step_id)
             if opts["on_loop"] == "skip":
                 return None
 
-        tool_signal = ctx.loop_detector.on_tool_call(f"{func_name}:{args_hash}")
+        tool_signal = active_ctx.loop_detector.on_tool_call(f"{func_name}:{args_hash}")
         if tool_signal:
-            _handle_loop_signal(tool_signal, step_id)
+            _handle_loop_signal(active_ctx, tool_signal, step_id)
             if opts["on_loop"] == "skip":
                 return None
 
         decision = _run_service_call(
-            ctx.service.send_step_start(
-                ctx.run_id,
+            active_ctx.service.send_step_start(
+                active_ctx.run_id,
                 {
                     "step_id": step_id,
                     "step_number": step_number,
@@ -370,9 +385,9 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                 actual_tokens_in = 0
                 actual_tokens_out = 0
 
-            ctx.trace_recorder.record_step(StepRecord(
+            active_ctx.trace_recorder.record_step(StepRecord(
                 step_id=step_id,
-                run_id=ctx.run_id,
+                run_id=active_ctx.run_id,
                 step_number=step_number,
                 started_at=started_at,
                 ended_at=ended_at,
@@ -384,9 +399,9 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                 latency_ms=latency_ms,
                 error=error_msg,
             ))
-            ctx.resource_limit_tracker.record_usage(actual_tokens_in, actual_tokens_out)
-            _fire_and_forget(ctx.service.send_step_end(
-                ctx.run_id,
+            active_ctx.resource_limit_tracker.record_usage(actual_tokens_in, actual_tokens_out)
+            _fire_and_forget(active_ctx.service.send_step_end(
+                active_ctx.run_id,
                 step_id,
                 {
                     "tool_name": func_name,
@@ -401,19 +416,19 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
             ))
 
         has_new_output = result is not None
-        progress_signal = ctx.loop_detector.on_progress(has_new_output)
+        progress_signal = active_ctx.loop_detector.on_progress(has_new_output)
         if progress_signal:
-            ctx.trace_recorder.record_guard_event(GuardEventRecord(
+            active_ctx.trace_recorder.record_guard_event(GuardEventRecord(
                 event_id=str(uuid.uuid4()),
-                run_id=ctx.run_id,
+                run_id=active_ctx.run_id,
                 step_id=step_id,
                 timestamp=_now_iso(),
                 type="loop_detected",
                 severity="warning",
                 details=progress_signal["details"],
             ))
-            _fire_and_forget(ctx.service.send_guard_event(
-                ctx.run_id,
+            _fire_and_forget(active_ctx.service.send_guard_event(
+                active_ctx.run_id,
                 {
                     "step_id": step_id,
                     "event_type": "loop_detected",
@@ -422,11 +437,11 @@ def _make_wrapper(fn: Callable[..., Any], opts: ResolvedOptions, ctx: GuardConte
                 },
             ))
             if opts["on_loop"] == "kill":
-                ctx.trace_recorder.flush()
+                active_ctx.trace_recorder.flush()
                 raise LoopDetected(progress_signal, func_name)
 
         if opts.get("side_effect"):
-            ctx.side_effect_registry.record_side_effect(step_id, func_name, result)
+            active_ctx.side_effect_registry.record_side_effect(step_id, func_name, result)
 
         return result
 

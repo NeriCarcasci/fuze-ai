@@ -21,6 +21,7 @@ Hatchling is the build backend. `python -m build` produces wheels.
 Current public surface (must mirror `packages/core/src/index.ts`):
 
 - `guard` — decorator (`@guard` or `@guard(timeout=...)`); also accepts a callable for HOF use
+- `guarded` — class decorator that walks own methods and wraps each (`@guarded` or `@guarded(timeout=...)`); has a JS counterpart
 - `create_run(config?)` — returns `RunContext`
 - `configure(config)` / `reset_config()`
 - `register_tools(project_id, tools)`
@@ -28,6 +29,8 @@ Current public surface (must mirror `packages/core/src/index.ts`):
 - `verify_chain(...)`
 - Errors: `LoopDetected`, `GuardTimeout`, `ResourceLimitExceeded`, `FuzeError`
 - Types: `GuardOptions`, `FuzeConfig`, `ResourceLimits`, `ResourceUsageStatus`
+
+`@guarded` propagates the active run via `contextvars.ContextVar`. Internal `self.method()` calls inside a `@guarded` instance record as steps in the same run; external calls open fresh runs. There is no Python counterpart to JS's `guardAll` Proxy — Python's `__getattribute__` magic is uglier than it's worth, and `@guarded` covers the same use case idiomatically. See `.context/parity.md`.
 
 ## Conventions specific to this package
 

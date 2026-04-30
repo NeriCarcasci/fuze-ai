@@ -62,8 +62,23 @@ Customers running mixed JS+Python agent stacks (LangGraph orchestrator + JS tool
 
 Track unfinished parity here. When a gap closes, delete the entry — don't leave it as history.
 
-- **No automated parity test suite.** `.context/testing.md` calls this out as the highest-value gap. Until it exists, every public-API PR carries unverified parity risk.
+- **Trace event key casing.** JS `TraceRecorder` writes `recordType`, `runId`, `stepId`, `argsHash`, `prevHash`, `tokensIn`, … in camelCase. Python writes the same fields in snake_case. The on-disk JSONL is therefore not byte-equal across languages. Resolution direction: snake_case is canonical (matches the `fuze.toml` and Python convention). The fix is to switch the JS recorder over to snake_case in a single PR with corresponding daemon and dashboard reader changes. Until then, the parity harness (`tests/parity/normalize.mjs`) renames known camelCase keys before comparison.
+- **`config` payload on `run_start`.** Each side dumps the resolved options table differently: JS omits null fields, Python emits them; both leak the absolute trace_output path. Decide whether `config` should stay in the trace at all and pin a schema either way. Harness currently drops the payload during normalization.
+- **Timestamp resolution.** JS uses `Date.now()` (ms); Python uses `datetime.now(timezone.utc).isoformat()` (µs). Cosmetic difference. Harness flattens both to a single `<ts>` placeholder.
+- **No automated parity test suite (mostly closed).** A working harness now lives at `tests/parity/` with the `01-basic-guard` scenario. Coverage is thin — needs scenarios for loop detection, retry, timeout, side-effect tracking. Don't claim full parity until those land.
 
 ## Conventions worth noting
 
 - **`fuze.toml` keys are snake_case (canonical) on both SDKs.** Python always required this; JS now accepts it too. JS continues to read camelCase as a deprecated alias — emit no warning yet, but plan to remove camelCase in a future minor release. New config files should use snake_case only.
+- **`args_hash` is byte-identical across SDKs.** Both compute SHA-256 of `canonicalStringify({args: [...], kwargs: {}})` with deep key sorting and compact separators. Cross-language loop detection depends on this. Don't change one without the other. See `packages/core/src/guard.ts` `canonicalStringify` and `packages/python/src/fuze_ai/guard.py` `_hash_args`.
+- **`error` field is omitted (not null) on success.** Both SDKs drop the field from the on-disk step record when there was no error. Match this if you add a similar optional field elsewhere.
+- **Run end status is `"completed"` on success and `"error"` on exception.** Both `@guarded` paths now propagate the failure status through `end_run` / `endRun`. Match for any new run-completion path.
+
+## JS-only ergonomic surfaces (parity-preserving)
+
+Two JS exports have no Python counterpart by design — they don't change the trace contract, only the entry-point ergonomics:
+
+- **`guardAll(obj, perMethodOpts?)`** — runtime Proxy wrapping. Python doesn't have native Proxy; metaclass / `__getattribute__` magic is uglier than it's worth. The trace events `guardAll` produces are byte-identical to what `@guarded` produces for the same logical work.
+- The polymorphic factory form `guardMethod({...})` mirrors how Python uses `@guard(...)` with options. Same semantics, JS-friendly syntax.
+
+`@guarded` (class decorator) and `@guard` (per-method) exist on both sides. `guardAll` is the only legitimate JS-only surface.

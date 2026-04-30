@@ -4,7 +4,7 @@ State invariants in terms of *roles*, not symbols. Specific class and file names
 
 ## Layers
 
-1. **Public API.** `guard`, `createRun`/`create_run`, `configure`, `registerTools`. The only surface external code touches. Anything else is internal and may change.
+1. **Public API.** `guard` (HOF), `guardMethod` / `guarded` (decorators), `guardAll` (JS-only Proxy), `createRun` / `create_run`, `configure`, `registerTools`. The only surface external code touches. Anything else is internal and may change.
 2. **Guard core.** Resource limit tracking, loop detection, side-effect registry, trace recording. Pure logic, no I/O. Same semantics in both SDKs.
 3. **Trace recorder.** Hash-chained, append-only event log. Every event includes the previous event's hash. Verifiable end-to-end without trusting the recorder.
 4. **Transport.** Pluggable. Three implementations: noop (in-process only), socket (self-hosted daemon over UDS/named pipe), cloud (HTTPS to managed ingest). Selected by config priority: cloud > socket > noop.

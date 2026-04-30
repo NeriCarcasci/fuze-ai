@@ -11,6 +11,7 @@ from fuze_ai.errors import (
     ResourceLimitExceeded,
 )
 from fuze_ai.guard import GuardContext, _build_context, _make_wrapper
+from fuze_ai.guarded import guarded
 from fuze_ai.pricing import extract_usage_from_result
 from fuze_ai.resource_limit_tracker import ResourceLimitTracker
 from fuze_ai.services import create_service
@@ -25,6 +26,7 @@ from fuze_ai.types import (
 
 __all__ = [
     "guard",
+    "guarded",
     "configure",
     "create_run",
     "register_tools",

@@ -327,14 +327,28 @@ export function createGuardWrapper(resolvedOpts: ResolvedOptions, context: Guard
   }
 }
 
-/**
- * Hashes function arguments using SHA-256 for dedup comparison.
- */
+// Match Python's _hash_args: serialize as `{"args": [...], "kwargs": {...}}`
+// with deep-sorted keys and compact separators, so positional-only JS calls
+// produce the same hash bytes as Python `*args` calls with no kwargs. JS has
+// no kwargs, so the kwargs object is always empty.
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'undefined') return 'null'
+    return JSON.stringify(value)
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalStringify).join(',') + ']'
+  }
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalStringify(obj[k])).join(',') + '}'
+}
+
 function hashArgs(args: unknown[]): string {
   const hash = createHash('sha256')
   let serialized = '[unserializable]'
   try {
-    serialized = JSON.stringify(args)
+    serialized = canonicalStringify({ args, kwargs: {} })
   } catch {
     serialized = String(args)
   }

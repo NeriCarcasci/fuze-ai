@@ -10,6 +10,14 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null
 }
 
+// Snake_case is the canonical fuze.toml convention (matches Python SDK and
+// TOML idiom). camelCase is accepted as a deprecated alias. If both forms
+// are present in the same table, snake_case wins.
+function readKey(record: UnknownRecord, snakeName: string, camelName: string): unknown {
+  if (record[snakeName] !== undefined) return record[snakeName]
+  return record[camelName]
+}
+
 function readNumber(
   value: unknown,
   fieldPath: string,
@@ -46,22 +54,29 @@ function parseDefaults(value: unknown): FuzeConfig['defaults'] {
   if (!isRecord(value)) throw new Error(`Invalid 'defaults': expected a table/object`)
 
   const out: NonNullable<FuzeConfig['defaults']> = {}
-  if (value['maxRetries'] !== undefined) out.maxRetries = readNumber(value['maxRetries'], 'defaults.maxRetries', { integer: true, min: 0 })
+  const maxRetries = readKey(value, 'max_retries', 'maxRetries')
+  if (maxRetries !== undefined) out.maxRetries = readNumber(maxRetries, 'defaults.max_retries', { integer: true, min: 0 })
   if (value['timeout'] !== undefined) out.timeout = readNumber(value['timeout'], 'defaults.timeout', { min: 0, allowInfinity: true })
-  if (value['maxIterations'] !== undefined) out.maxIterations = readNumber(value['maxIterations'], 'defaults.maxIterations', { integer: true, min: 1 })
-  if (value['onLoop'] !== undefined) out.onLoop = readOnLoop(value['onLoop'], 'defaults.onLoop')
-  if (value['traceOutput'] !== undefined) out.traceOutput = readString(value['traceOutput'], 'defaults.traceOutput')
+  const maxIterations = readKey(value, 'max_iterations', 'maxIterations')
+  if (maxIterations !== undefined) out.maxIterations = readNumber(maxIterations, 'defaults.max_iterations', { integer: true, min: 1 })
+  const onLoop = readKey(value, 'on_loop', 'onLoop')
+  if (onLoop !== undefined) out.onLoop = readOnLoop(onLoop, 'defaults.on_loop')
+  const traceOutput = readKey(value, 'trace_output', 'traceOutput')
+  if (traceOutput !== undefined) out.traceOutput = readString(traceOutput, 'defaults.trace_output')
   return out
 }
 
 function parseLoopDetection(value: unknown): FuzeConfig['loopDetection'] {
   if (value === undefined) return undefined
-  if (!isRecord(value)) throw new Error(`Invalid 'loopDetection': expected a table/object`)
+  if (!isRecord(value)) throw new Error(`Invalid 'loop_detection': expected a table/object`)
 
   const out: NonNullable<FuzeConfig['loopDetection']> = {}
-  if (value['windowSize'] !== undefined) out.windowSize = readNumber(value['windowSize'], 'loopDetection.windowSize', { integer: true, min: 1 })
-  if (value['repeatThreshold'] !== undefined) out.repeatThreshold = readNumber(value['repeatThreshold'], 'loopDetection.repeatThreshold', { integer: true, min: 1 })
-  if (value['maxFlatSteps'] !== undefined) out.maxFlatSteps = readNumber(value['maxFlatSteps'], 'loopDetection.maxFlatSteps', { integer: true, min: 1 })
+  const windowSize = readKey(value, 'window_size', 'windowSize')
+  if (windowSize !== undefined) out.windowSize = readNumber(windowSize, 'loop_detection.window_size', { integer: true, min: 1 })
+  const repeatThreshold = readKey(value, 'repeat_threshold', 'repeatThreshold')
+  if (repeatThreshold !== undefined) out.repeatThreshold = readNumber(repeatThreshold, 'loop_detection.repeat_threshold', { integer: true, min: 1 })
+  const maxFlatSteps = readKey(value, 'max_flat_steps', 'maxFlatSteps')
+  if (maxFlatSteps !== undefined) out.maxFlatSteps = readNumber(maxFlatSteps, 'loop_detection.max_flat_steps', { integer: true, min: 1 })
   return out
 }
 
@@ -76,7 +91,8 @@ function parseDaemon(value: unknown): FuzeConfig['daemon'] {
     }
     daemon.enabled = value['enabled']
   }
-  if (value['socketPath'] !== undefined) daemon.socketPath = readString(value['socketPath'], 'daemon.socketPath')
+  const socketPath = readKey(value, 'socket_path', 'socketPath')
+  if (socketPath !== undefined) daemon.socketPath = readString(socketPath, 'daemon.socket_path')
   return daemon
 }
 
@@ -85,27 +101,32 @@ function parseCloud(value: unknown): FuzeConfig['cloud'] {
   if (!isRecord(value)) throw new Error(`Invalid 'cloud': expected a table/object`)
 
   const cloud: NonNullable<FuzeConfig['cloud']> = {}
-  if (value['apiKey'] !== undefined) cloud.apiKey = readString(value['apiKey'], 'cloud.apiKey')
+  const apiKey = readKey(value, 'api_key', 'apiKey')
+  if (apiKey !== undefined) cloud.apiKey = readString(apiKey, 'cloud.api_key')
   if (value['endpoint'] !== undefined) cloud.endpoint = readString(value['endpoint'], 'cloud.endpoint')
-  if (value['flushIntervalMs'] !== undefined) {
-    cloud.flushIntervalMs = readNumber(value['flushIntervalMs'], 'cloud.flushIntervalMs', { integer: true, min: 1000 })
+  const flushIntervalMs = readKey(value, 'flush_interval_ms', 'flushIntervalMs')
+  if (flushIntervalMs !== undefined) {
+    cloud.flushIntervalMs = readNumber(flushIntervalMs, 'cloud.flush_interval_ms', { integer: true, min: 1000 })
   }
   return cloud
 }
 
 function parseResourceLimits(value: unknown): ResourceLimits | undefined {
   if (value === undefined) return undefined
-  if (!isRecord(value)) throw new Error(`Invalid 'resourceLimits': expected a table/object`)
+  if (!isRecord(value)) throw new Error(`Invalid 'resource_limits': expected a table/object`)
 
   const out: ResourceLimits = {}
-  if (value['maxSteps'] !== undefined) {
-    out.maxSteps = readNumber(value['maxSteps'], 'resourceLimits.maxSteps', { integer: true, min: 1 })
+  const maxSteps = readKey(value, 'max_steps', 'maxSteps')
+  if (maxSteps !== undefined) {
+    out.maxSteps = readNumber(maxSteps, 'resource_limits.max_steps', { integer: true, min: 1 })
   }
-  if (value['maxTokensPerRun'] !== undefined) {
-    out.maxTokensPerRun = readNumber(value['maxTokensPerRun'], 'resourceLimits.maxTokensPerRun', { integer: true, min: 1 })
+  const maxTokensPerRun = readKey(value, 'max_tokens_per_run', 'maxTokensPerRun')
+  if (maxTokensPerRun !== undefined) {
+    out.maxTokensPerRun = readNumber(maxTokensPerRun, 'resource_limits.max_tokens_per_run', { integer: true, min: 1 })
   }
-  if (value['maxWallClockMs'] !== undefined) {
-    out.maxWallClockMs = readNumber(value['maxWallClockMs'], 'resourceLimits.maxWallClockMs', { integer: true, min: 1 })
+  const maxWallClockMs = readKey(value, 'max_wall_clock_ms', 'maxWallClockMs')
+  if (maxWallClockMs !== undefined) {
+    out.maxWallClockMs = readNumber(maxWallClockMs, 'resource_limits.max_wall_clock_ms', { integer: true, min: 1 })
   }
   return out
 }
@@ -115,26 +136,27 @@ function parseProject(value: unknown): FuzeConfig['project'] {
   if (!isRecord(value)) throw new Error(`Invalid 'project': expected a table/object`)
 
   const project: NonNullable<FuzeConfig['project']> = {}
-  if (value['projectId'] !== undefined) project.projectId = readString(value['projectId'], 'project.projectId')
+  const projectId = readKey(value, 'project_id', 'projectId')
+  if (projectId !== undefined) project.projectId = readString(projectId, 'project.project_id')
   return project
 }
 
 function validateConfig(raw: unknown): FuzeConfig {
   if (!isRecord(raw)) throw new Error('Invalid config root: expected a table/object')
 
-  const usageExtractor = raw['usageExtractor']
+  const usageExtractor = readKey(raw, 'usage_extractor', 'usageExtractor')
   if (usageExtractor !== undefined && typeof usageExtractor !== 'function') {
-    throw new Error(`Invalid 'usageExtractor': expected a function`)
+    throw new Error(`Invalid 'usage_extractor': expected a function`)
   }
 
   return {
     defaults: parseDefaults(raw['defaults']),
-    loopDetection: parseLoopDetection(raw['loopDetection']),
+    loopDetection: parseLoopDetection(readKey(raw, 'loop_detection', 'loopDetection')),
     usageExtractor: usageExtractor as FuzeConfig['usageExtractor'],
     daemon: parseDaemon(raw['daemon']),
     cloud: parseCloud(raw['cloud']),
     project: parseProject(raw['project']),
-    resourceLimits: parseResourceLimits(raw['resourceLimits']),
+    resourceLimits: parseResourceLimits(readKey(raw, 'resource_limits', 'resourceLimits')),
   }
 }
 
@@ -146,17 +168,7 @@ function readResolvedNumber(
   return readNumber(value, fieldPath, opts)
 }
 
-/**
- * Loads Fuze configuration from fuze.toml and merges with defaults and per-function options.
- */
 export class ConfigLoader {
-  /**
-   * Load configuration from a fuze.toml file.
-   * Returns built-in defaults if the file does not exist.
-   * @param path - Path to fuze.toml. Defaults to './fuze.toml' in the current working directory.
-   * @returns The parsed Fuze configuration.
-   * @throws Error with file path if the TOML is invalid.
-   */
   static load(path?: string): FuzeConfig {
     const configPath = resolve(path ?? './fuze.toml')
 
@@ -175,13 +187,6 @@ export class ConfigLoader {
     }
   }
 
-  /**
-   * Merge project config (from fuze.toml) with per-function guard options.
-   * Priority: guardOptions > projectConfig > DEFAULTS.
-   * @param projectConfig - Configuration loaded from fuze.toml.
-   * @param guardOptions - Per-function options passed to guard().
-   * @returns Fully resolved options.
-   */
   static merge(projectConfig: FuzeConfig, guardOptions: GuardOptions = {}): ResolvedOptions {
     const cfg = projectConfig.defaults ?? {}
     const loop = projectConfig.loopDetection ?? {}

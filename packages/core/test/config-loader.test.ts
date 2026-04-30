@@ -15,18 +15,41 @@ describe('ConfigLoader', () => {
   it('returns empty config (built-in defaults apply) when fuze.toml is missing', () => {
     const config = ConfigLoader.load('/nonexistent/path/fuze.toml')
 
-    // Should return empty object, no error
     expect(config).toEqual({})
   })
 
-  it('reads values from fuze.toml', () => {
+  it('reads canonical snake_case keys from fuze.toml', () => {
     writeFileSync(
       TEST_TOML_PATH,
       `
 [defaults]
-maxRetries = 5
+max_retries = 5
 timeout = 60000
-onLoop = "warn"
+on_loop = "warn"
+max_iterations = 30
+trace_output = "./out.jsonl"
+
+[loop_detection]
+window_size = 7
+repeat_threshold = 4
+max_flat_steps = 6
+
+[resource_limits]
+max_steps = 50
+max_tokens_per_run = 100000
+max_wall_clock_ms = 600000
+
+[daemon]
+enabled = true
+socket_path = "/tmp/fuze.sock"
+
+[cloud]
+api_key = "secret"
+endpoint = "https://api.fuze-ai.tech"
+flush_interval_ms = 5000
+
+[project]
+project_id = "p_abc"
 `,
       'utf-8',
     )
@@ -36,6 +59,64 @@ onLoop = "warn"
     expect(config.defaults?.maxRetries).toBe(5)
     expect(config.defaults?.timeout).toBe(60000)
     expect(config.defaults?.onLoop).toBe('warn')
+    expect(config.defaults?.maxIterations).toBe(30)
+    expect(config.defaults?.traceOutput).toBe('./out.jsonl')
+    expect(config.loopDetection?.windowSize).toBe(7)
+    expect(config.loopDetection?.repeatThreshold).toBe(4)
+    expect(config.loopDetection?.maxFlatSteps).toBe(6)
+    expect(config.resourceLimits?.maxSteps).toBe(50)
+    expect(config.resourceLimits?.maxTokensPerRun).toBe(100000)
+    expect(config.resourceLimits?.maxWallClockMs).toBe(600000)
+    expect(config.daemon?.enabled).toBe(true)
+    expect(config.daemon?.socketPath).toBe('/tmp/fuze.sock')
+    expect(config.cloud?.apiKey).toBe('secret')
+    expect(config.cloud?.endpoint).toBe('https://api.fuze-ai.tech')
+    expect(config.cloud?.flushIntervalMs).toBe(5000)
+    expect(config.project?.projectId).toBe('p_abc')
+  })
+
+  it('accepts deprecated camelCase keys for backwards compatibility', () => {
+    writeFileSync(
+      TEST_TOML_PATH,
+      `
+[defaults]
+maxRetries = 5
+timeout = 60000
+onLoop = "warn"
+
+[loopDetection]
+windowSize = 10
+repeatThreshold = 5
+
+[resourceLimits]
+maxTokensPerRun = 99999
+`,
+      'utf-8',
+    )
+
+    const config = ConfigLoader.load(TEST_TOML_PATH)
+
+    expect(config.defaults?.maxRetries).toBe(5)
+    expect(config.defaults?.onLoop).toBe('warn')
+    expect(config.loopDetection?.windowSize).toBe(10)
+    expect(config.loopDetection?.repeatThreshold).toBe(5)
+    expect(config.resourceLimits?.maxTokensPerRun).toBe(99999)
+  })
+
+  it('snake_case wins when both forms are present in the same table', () => {
+    writeFileSync(
+      TEST_TOML_PATH,
+      `
+[defaults]
+max_retries = 7
+maxRetries = 99
+`,
+      'utf-8',
+    )
+
+    const config = ConfigLoader.load(TEST_TOML_PATH)
+
+    expect(config.defaults?.maxRetries).toBe(7)
   })
 
   it('fuze.toml values override built-in defaults in merge', () => {
@@ -50,7 +131,6 @@ onLoop = "warn"
 
     expect(resolved.maxRetries).toBe(5)
     expect(resolved.timeout).toBe(60000)
-    // Unset values should fall back to defaults
     expect(resolved.maxIterations).toBe(25)
   })
 
@@ -89,7 +169,6 @@ onLoop = "warn"
 
     expect(resolved.loopDetection.windowSize).toBe(10)
     expect(resolved.loopDetection.repeatThreshold).toBe(5)
-    // Defaults for unset values
     expect(resolved.loopDetection.maxFlatSteps).toBe(4)
   })
 
@@ -103,10 +182,23 @@ timeout = "fast"
       'utf-8',
     )
 
-    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow("defaults.timeout")
+    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow('defaults.timeout')
   })
 
-  it('throws for invalid defaults.onLoop values', () => {
+  it('throws for invalid on_loop values, referencing canonical snake_case in error', () => {
+    writeFileSync(
+      TEST_TOML_PATH,
+      `
+[defaults]
+on_loop = "halt"
+`,
+      'utf-8',
+    )
+
+    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow('defaults.on_loop')
+  })
+
+  it('error message uses canonical snake_case even when user passed camelCase', () => {
     writeFileSync(
       TEST_TOML_PATH,
       `
@@ -116,7 +208,6 @@ onLoop = "halt"
       'utf-8',
     )
 
-    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow("defaults.onLoop")
+    expect(() => ConfigLoader.load(TEST_TOML_PATH)).toThrow('defaults.on_loop')
   })
-
 })

@@ -62,5 +62,8 @@ Customers running mixed JS+Python agent stacks (LangGraph orchestrator + JS tool
 
 Track unfinished parity here. When a gap closes, delete the entry — don't leave it as history.
 
-- **`fuze.toml` key naming.** JS config-loader expects camelCase (`maxRetries`, `loopDetection`, `resourceLimits`). Python expects snake_case (`max_retries`, `loop_detection`, `resource_limits`). A user who writes one config file cannot use it from both SDKs. Resolution direction: snake_case is the canonical TOML convention; JS should accept snake_case (with camelCase as a deprecated alias for one minor version, then removed). Until then, the root `fuze.toml.example` documents the JS form because that's what's deployed.
 - **No automated parity test suite.** `.context/testing.md` calls this out as the highest-value gap. Until it exists, every public-API PR carries unverified parity risk.
+
+## Conventions worth noting
+
+- **`fuze.toml` keys are snake_case (canonical) on both SDKs.** Python always required this; JS now accepts it too. JS continues to read camelCase as a deprecated alias — emit no warning yet, but plan to remove camelCase in a future minor release. New config files should use snake_case only.

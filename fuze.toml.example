@@ -1,16 +1,33 @@
-# Fuze AI Configuration
-# Copy this file to fuze.toml in your project root.
+# Fuze configuration. Copy to fuze.toml in your project root.
+# Both SDKs (JS and Python) parse this file. Snake_case is canonical;
+# camelCase is accepted as a deprecated alias on the JS side and will
+# be removed in a future minor release.
 
 [defaults]
-maxRetries = 3
-timeout = 30000           # ms
-maxTokensPerRun = 100000  # total input+output tokens per run
-maxWallClockMs = 600000   # wall-clock ceiling per run (ms)
-maxIterations = 25
-onLoop = "kill"           # "kill" | "warn" | "skip"
-traceOutput = "./fuze-traces.jsonl"
+max_retries = 3
+timeout = 30_000          # ms
+max_iterations = 25
+on_loop = "kill"          # "kill" | "warn" | "skip"
+trace_output = "./fuze-traces.jsonl"
 
-[loopDetection]
-windowSize = 5
-repeatThreshold = 3
-maxFlatSteps = 4
+[loop_detection]
+window_size = 5
+repeat_threshold = 3
+max_flat_steps = 4
+
+[resource_limits]
+# max_steps = 50
+# max_tokens_per_run = 100_000
+# max_wall_clock_ms = 600_000
+
+# [daemon]
+# enabled = true
+# socket_path = "/tmp/fuze.sock"
+
+# [cloud]
+# api_key = "set FUZE_API_KEY env var instead of hardcoding here"
+# endpoint = "https://api.fuze-ai.tech"
+# flush_interval_ms = 5_000
+
+# [project]
+# project_id = "p_your_project_id"

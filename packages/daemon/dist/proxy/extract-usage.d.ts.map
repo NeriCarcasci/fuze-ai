@@ -1,1 +1,0 @@
-{"version":3,"file":"extract-usage.d.ts","sourceRoot":"","sources":["../../src/proxy/extract-usage.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,MAAM,WAAW,mBAAmB;IAClC,QAAQ,EAAE,MAAM,CAAA;IAChB,SAAS,EAAE,MAAM,CAAA;IACjB,KAAK,CAAC,EAAE,MAAM,CAAA;CACf;AAED;;;GAGG;AACH,wBAAgB,sBAAsB,CAAC,MAAM,EAAE,OAAO,GAAG,mBAAmB,GAAG,IAAI,CA+ClF"}

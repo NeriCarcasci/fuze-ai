@@ -1,9 +1,39 @@
+# Node / TypeScript
 node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.tsbuildinfo
 
-examples\local-setup.sh
-.fuze/audit.key
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+*.egg-info/
+**/*.egg-info/
+build/
+.venv/
+venv/
+
+# Local dev artifacts
+fuze-traces.jsonl
+**/fuze-traces.jsonl
 audit.key
+**/audit.key
+.fuze/
 
-# Local-only Claude Code state (settings, history). The committed agent
+# Local-only Claude Code state (history, settings). The committed agent
 # context lives in AGENTS.md, CLAUDE.md, and .context/ — those ARE tracked.
 .claude/
+
+# Examples may have local-only setup scripts
+examples/local-setup.sh
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

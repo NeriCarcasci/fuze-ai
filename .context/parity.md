@@ -57,3 +57,10 @@ The authoritative trace event schema lives at `data/trace-schema.json` (planned)
 ## Why this matters
 
 Customers running mixed JS+Python agent stacks (LangGraph orchestrator + JS tool runner, etc.) will see one logical run as two streams of telemetry. If the schemas drift, the dashboard and audit log become incoherent. EU compliance posture depends on the audit log being a single coherent ledger. Parity is not a nice-to-have.
+
+## Known parity gaps (open bugs)
+
+Track unfinished parity here. When a gap closes, delete the entry — don't leave it as history.
+
+- **`fuze.toml` key naming.** JS config-loader expects camelCase (`maxRetries`, `loopDetection`, `resourceLimits`). Python expects snake_case (`max_retries`, `loop_detection`, `resource_limits`). A user who writes one config file cannot use it from both SDKs. Resolution direction: snake_case is the canonical TOML convention; JS should accept snake_case (with camelCase as a deprecated alias for one minor version, then removed). Until then, the root `fuze.toml.example` documents the JS form because that's what's deployed.
+- **No automated parity test suite.** `.context/testing.md` calls this out as the highest-value gap. Until it exists, every public-API PR carries unverified parity risk.

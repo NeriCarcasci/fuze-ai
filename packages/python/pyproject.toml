@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fuze-ai"
+version = "0.1.0"
+description = "Runtime safety layer for AI agents — loop detection, budget enforcement, side-effect tracking, and audit logging."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+toml = ["tomli>=2.0; python_version < '3.11'"]
+services = ["httpx>=0.27"]
+langgraph = ["langgraph>=0.1"]
+crewai = ["crewai>=0.1"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "tomli>=2.0",
+    "hatchling>=1.0",
+]
+
+[project.urls]
+Homepage = "https://fuze-ai.tech"
+Repository = "https://github.com/NeriCarcasci/fuze-ai"
+Documentation = "https://fuze-ai.tech/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fuze_ai"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"src/fuze_ai/data" = "fuze_ai/data"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

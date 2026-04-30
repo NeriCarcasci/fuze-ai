@@ -357,13 +357,14 @@ This section exists so you can make an informed procurement decision. The follow
 Fuze is MIT licensed. Contributions welcome.
 
 ```bash
-git clone https://github.com/fuze-ai/fuze
-cd fuze
+git clone https://github.com/NeriCarcasci/fuze-ai
+cd fuze-ai
 npm install
-npm test
+npm test                           # JS tests across all packages
+cd packages/python && pip install -e ".[dev]" && pytest
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+This is a monorepo: `packages/core` (JS SDK), `packages/daemon` (self-hosted runtime), `packages/python` (Python SDK). Agent context lives in [AGENTS.md](./AGENTS.md) and [.context/](./.context/) — read those before opening a PR.
 
 ## License
 

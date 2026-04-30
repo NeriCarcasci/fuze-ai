@@ -1,1 +1,0 @@
-{"version":3,"file":"daemon-client.js","sourceRoot":"","sources":["../src/daemon-client.ts"],"names":[],"mappings":"AAEA;;;GAGG;AACH,MAAM,OAAO,YAAY;IACvB;;;;;;OAMG;IACH,KAAK,CAAC,KAAK,CAAC,MAAc,EAAE,OAAe;QACzC,OAAO,EAAE,MAAM,EAAE,SAAS,EAAE,CAAA;IAC9B,CAAC;CACF"}

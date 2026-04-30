@@ -4,6 +4,6 @@ examples\local-setup.sh
 .fuze/audit.key
 audit.key
 
-# Local working context (never committed)
-.context/
+# Local-only Claude Code state (settings, history). The committed agent
+# context lives in AGENTS.md, CLAUDE.md, and .context/ — those ARE tracked.
 .claude/

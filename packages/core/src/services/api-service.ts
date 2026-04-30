@@ -7,7 +7,7 @@ import type {
   GuardEventData,
 } from './types.js'
 
-const STEP_CHECK_TIMEOUT_MS = 50
+const STEP_CHECK_TIMEOUT_MS = 1_500
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000
 const MIN_FLUSH_INTERVAL_MS = 1_000
 const CONFIG_REFRESH_INTERVAL_MS = 30_000
@@ -173,8 +173,9 @@ export class ApiService implements FuzeService {
 
   async sendStepStart(runId: string, step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'> {
     if (!this._hasApiKey()) return 'proceed'
+    if (this._isCircuitOpen(Date.now())) return 'proceed'
 
-    const body = await this._request(async () => {
+    try {
       const res = await fetch(`${this._endpoint}/v1/step/check`, {
         method: 'POST',
         headers: {
@@ -184,13 +185,14 @@ export class ApiService implements FuzeService {
         body: JSON.stringify({ run_id: runId, step }),
         signal: AbortSignal.timeout(STEP_CHECK_TIMEOUT_MS),
       })
-      if (!res.ok) throw new Error(`Step check failed: ${res.status}`)
-      return await res.json() as { decision?: string } | null
-    })
-
-    const decision = body?.decision
-    if (decision === 'kill' || decision === 'pause') return decision
-    return 'proceed'
+      if (!res.ok) return 'proceed'
+      const body = await res.json() as { decision?: string } | null
+      const decision = body?.decision
+      if (decision === 'kill' || decision === 'pause') return decision
+      return 'proceed'
+    } catch {
+      return 'proceed'
+    }
   }
 
   async sendStepEnd(runId: string, stepId: string, data: StepEndData): Promise<void> {

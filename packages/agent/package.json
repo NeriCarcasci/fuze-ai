@@ -1,0 +1,48 @@
+{
+  "name": "@fuze-ai/agent",
+  "version": "0.1.0",
+  "description": "Fuze Agent — TypeScript agent framework with EU compliance evidence baked in. Layered on fuze-ai safety SDK.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./conformance": {
+      "import": "./dist/conformance/index.js",
+      "types": "./dist/conformance/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fuze-ai": "0.1.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@fuze-ai/agent-annex-iv": "0.1.0",
+    "@fuze-ai/agent-api": "0.1.0",
+    "@fuze-ai/agent-api-server": "0.1.0",
+    "@fuze-ai/agent-cli": "0.1.0",
+    "@fuze-ai/agent-compliance": "0.1.0",
+    "@fuze-ai/agent-durable": "0.1.0",
+    "@fuze-ai/agent-policy-cerbos": "0.1.0",
+    "@fuze-ai/agent-redaction": "0.1.0",
+    "@fuze-ai/agent-signing": "0.1.0",
+    "@fuze-ai/agent-suspend-store": "0.1.0",
+    "@fuze-ai/agent-transparency": "0.1.0",
+    "@types/node": "^22.0.0",
+    "fast-check": "^4.7.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

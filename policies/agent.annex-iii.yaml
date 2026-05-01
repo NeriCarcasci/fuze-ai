@@ -1,0 +1,25 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  resource: "*"
+  version: annex-iii
+  rules:
+    - id: annex-iii.refuse-special-category-non-sovereign
+      actions: [invoke]
+      effect: EFFECT_DENY
+      condition:
+        match:
+          expr: R.attr.classification == 'special-category' && R.attr.tier != 'eu-sovereign'
+
+    - id: annex-iii.allow-special-category-on-sovereign
+      actions: [invoke]
+      effect: EFFECT_ALLOW
+      condition:
+        match:
+          expr: R.attr.classification == 'special-category' && R.attr.tier == 'eu-sovereign'
+
+    - id: annex-iii.allow-non-special-category
+      actions: [invoke]
+      effect: EFFECT_ALLOW
+      condition:
+        match:
+          expr: R.attr.classification != 'special-category'

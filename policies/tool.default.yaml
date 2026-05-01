@@ -1,0 +1,32 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  resource: "*"
+  version: default
+  rules:
+    - id: deny-special-category-without-eu-residency
+      actions: [invoke]
+      effect: EFFECT_DENY
+      condition:
+        match:
+          expr: R.attr.classification == 'special-category'
+
+    - id: requires-approval-for-business-data
+      actions: [invoke]
+      effect: EFFECT_REQUIRES_APPROVAL
+      condition:
+        match:
+          expr: R.attr.classification == 'business'
+
+    - id: allow-public-by-default
+      actions: [invoke]
+      effect: EFFECT_ALLOW
+      condition:
+        match:
+          expr: R.attr.classification == 'public'
+
+    - id: allow-personal-with-tenant
+      actions: [invoke]
+      effect: EFFECT_ALLOW
+      condition:
+        match:
+          expr: R.attr.classification == 'personal'

@@ -1,27 +1,17 @@
 # Fuze AI Examples
 
-Working examples demonstrating Fuze's runtime safety features.
+Small, focused examples of Fuze's runtime safety surface. Each example is mirrored 1:1 between TypeScript and Python and uses the decorator pattern (`guard()` wrapping in TS, `@guard` in Python). The non-Fuze parts (LLM responses, side-effect targets) are minimal in-process fakes — every Fuze call is real.
 
-## TypeScript
+## Examples
 
-| Example | Demonstrates |
-|---|---|
-| [01-basic-guard](typescript/01-basic-guard/) | Wrapping a function with `guard()` |
-| [02-budget-ceiling](typescript/02-budget-ceiling/) | Token ceilings — agent killed at 100,000 tokens |
-| [03-loop-detection](typescript/03-loop-detection/) | Catching repeated identical tool calls |
-| [04-side-effects](typescript/04-side-effects/) | Side-effect tracking with compensation |
-| [05-multi-agent](typescript/05-multi-agent/) | Multiple agents sharing a token ceiling via `createRun()` |
-| [06-mcp-proxy](typescript/06-mcp-proxy/) | Zero-code MCP server protection |
-
-## Python
-
-| Example | Demonstrates |
-|---|---|
-| [01-basic-guard](python/01-basic-guard/) | `@guard` decorator basics |
-| [02-budget-ceiling](python/02-budget-ceiling/) | Token ceilings in Python |
-| [03-loop-detection](python/03-loop-detection/) | Loop detection in Python |
-| [04-side-effects](python/04-side-effects/) | Side-effects with `@guard` |
-| [05-langgraph-adapter](python/05-langgraph-adapter/) | `@fuze_tool` with LangGraph |
+| # | Demonstrates | TypeScript | Python |
+|---|---|---|---|
+| 01 | Wrapping one tool with the guard decorator | [typescript/01-basic-guard](typescript/01-basic-guard/) | [python/01-basic-guard](python/01-basic-guard/) |
+| 02 | Per-run token ceiling enforcement | [typescript/02-budget-ceiling](typescript/02-budget-ceiling/) | [python/02-budget-ceiling](python/02-budget-ceiling/) |
+| 03 | Loop detection on repeated identical calls | [typescript/03-loop-detection](typescript/03-loop-detection/) | [python/03-loop-detection](python/03-loop-detection/) |
+| 04 | Side-effect tracking with compensation | [typescript/04-side-effects](typescript/04-side-effects/) | [python/04-side-effects](python/04-side-effects/) |
+| 05 | Shared run across multiple agents | [typescript/05-multi-agent](typescript/05-multi-agent/) | [python/05-multi-agent](python/05-multi-agent/) |
+| 06 | Zero-code MCP server protection (CLI) | [typescript/06-mcp-proxy](typescript/06-mcp-proxy/) | — |
 
 ## Running
 
@@ -29,7 +19,7 @@ Working examples demonstrating Fuze's runtime safety features.
 # TypeScript
 cd typescript/01-basic-guard
 npm install
-npx tsx index.ts
+npm start
 
 # Python
 cd python/01-basic-guard
@@ -37,13 +27,13 @@ pip install fuze-ai
 python main.py
 ```
 
-Every example produces a `fuze-traces.jsonl` file you can inspect.
+Every example writes a `fuze-traces.jsonl` file you can inspect.
 
-## What to look for
+## What to look for in a trace
 
-After running an example, open the generated `fuze-traces.jsonl` file. Each line is a JSON record:
+Each line is a JSON record:
 
-- **`run_start`** — marks the beginning of a run with agent ID and config
-- **`step`** — one tool call with timestamps, latency, token usage, and args hash
+- **`run_start`** — beginning of a run (agent ID, config)
+- **`step`** — one tool call (timestamps, latency, token usage, args hash)
 - **`guard_event`** — a Fuze intervention (loop detected, token ceiling crossed, timeout)
-- **`run_end`** — marks completion with final status
+- **`run_end`** — completion with final status

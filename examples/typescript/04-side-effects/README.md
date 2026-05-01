@@ -1,58 +1,24 @@
-# 04 - Side-Effect Tracking & Compensation
+# Example 04 — Side Effects & Compensation
 
-Demonstrates how Fuze tracks functions that produce real-world side effects and
-how compensation handlers provide rollback capability.
+Mark a step that touches the outside world with `sideEffect: true` and register a `compensate` handler. If a later step fails, the compensation rolls the side-effect back.
 
-## What this example shows
+## How it works
 
-1. **`createInvoice`** is wrapped with `guard(fn, { sideEffect: true, compensate })`.
-   It succeeds, so Fuze records the side effect and remembers the compensation
-   function (`cancelInvoice`).
+`guard(createInvoice, { sideEffect: true, compensate: cancelInvoice })` tells Fuze:
+- This step has real-world consequences (don't blindly retry it).
+- If the run needs to roll back, call `cancelInvoice` with this step's return value.
 
-2. **`sendEmail`** is also wrapped with a side-effect guard and a compensate
-   handler. It *fails* with a simulated SMTP error, so Fuze never records a
-   side effect for it (the function threw before producing a result).
+In this example the receipt step fails. In a daemon-backed pipeline the rollback fires automatically when the run ends in failure; here we trigger it manually for clarity.
 
-3. When a run is killed (budget exceeded, loop detected, or explicit rollback),
-   Fuze calls each registered compensation function in **reverse chronological
-   order** -- only for steps whose side effects were actually recorded.
-
-## Key API
-
-```ts
-import { guard } from 'fuze-ai'
-
-const safeFn = guard(riskyFunction, {
-  sideEffect: true,                // tells Fuze this call has real-world consequences
-  compensate: async (result) => {  // called during rollback with the original return value
-    await undoTheChange(result)
-  },
-})
-```
-
-## Run it
+## Run
 
 ```bash
 npm install
 npm start
 ```
 
-## Expected output
+## What to look for in the trace
 
-```
-Fuze AI -- Side-Effect Tracking & Compensation
-
-Step 1: Creating invoice...
-  [billing] Created invoice inv_... for $249.99
-  Invoice created: inv_...
-
-Step 2: Sending confirmation email...
-  Email FAILED: SMTP error: connection to mail server timed out
-
---- Fuze side-effect summary ---
-Invoice in DB: [ { id: 'inv_...', customerId: 'cust_42', amount: 249.99, status: 'open' } ]
-
-Because createInvoice was marked sideEffect: true with a
-compensate handler, Fuze knows how to roll it back.
-...
-```
+- The `createInvoice` step has `hasSideEffect: true`.
+- The `sendReceipt` step has an `error` field.
+- A `compensation` record (in daemon-backed traces) shows the rollback succeeded.

@@ -1,119 +1,99 @@
-import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+// Fuze AI — Example 05: Multi-Agent Shared Run
+//
+// `createRun()` opens a run context. Tools wrapped with `run.guard()`
+// share its loop detector and resource ceiling — different tools, one
+// budget, one trace.
+
 import { configure, createRun } from 'fuze-ai'
 
-// Shared token ceiling for all runs in this session.
-// createRun() inherits this via the global config.
 configure({
-  resourceLimits: {
-    maxTokensPerRun: 50_000,
-  },
+  resourceLimits: { maxTokensPerRun: 50_000 },
 })
 
 // --- Researcher agent tools ---
 
-async function webSearch(query: string): Promise<{ results: string[]; usage: { prompt_tokens: number; completion_tokens: number }; model: string }> {
-  // Real operation: search source files for the query term
-  const srcDir = join(import.meta.dirname, '..', '..', '..', 'packages', 'core', 'src')
-  const files = readdirSync(srcDir).filter(f => f.endsWith('.ts'))
-  const results: string[] = []
-  for (const file of files) {
-    const content = readFileSync(join(srcDir, file), 'utf-8')
-    if (content.toLowerCase().includes(query.toLowerCase())) {
-      const lines = content.split('\n').length
-      results.push(`[${file}] ${lines} lines -- contains "${query}"`)
-    }
-  }
+async function webSearch(query: string): Promise<{
+  result: string[]
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
   return {
-    results: results.slice(0, 5),
-    usage: { prompt_tokens: 2000, completion_tokens: 500 },
+    result: [`hit-1 for "${query}"`, `hit-2 for "${query}"`],
+    usage: { prompt_tokens: 2_000, completion_tokens: 500 },
     model: 'gpt-4o',
   }
 }
 
-async function summarise(documents: string[]): Promise<{ result: string; usage: { prompt_tokens: number; completion_tokens: number }; model: string }> {
-  // Real operation: compute aggregate stats
-  const totalMentions = documents.length
-  const fileNames = documents.map(d => d.match(/\[(.+?)\]/)?.[1] ?? 'unknown')
+async function summarise(docs: string[]): Promise<{
+  result: string
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
   return {
-    result: `Found "${totalMentions}" matching files: ${fileNames.join(', ')}`,
-    usage: { prompt_tokens: 3000, completion_tokens: 800 },
+    result: `summary of ${docs.length} docs`,
+    usage: { prompt_tokens: 3_000, completion_tokens: 800 },
     model: 'gpt-4o',
   }
 }
 
 // --- Writer agent tools ---
 
-async function draft(summary: string, tone: string): Promise<{ result: string; usage: { prompt_tokens: number; completion_tokens: number }; model: string }> {
-  const hash = createHash('md5').update(summary).digest('hex').slice(0, 8)
+async function draft(summary: string, tone: string): Promise<{
+  result: string
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
   return {
-    result: `[Draft-${hash} | tone=${tone}]\n${summary}\n\nThis analysis covers the key patterns found across the codebase.`,
-    usage: { prompt_tokens: 4000, completion_tokens: 2000 },
+    result: `[draft|${tone}] ${summary}`,
+    usage: { prompt_tokens: 4_000, completion_tokens: 2_000 },
     model: 'gpt-4o',
   }
 }
 
-async function editDraft(text: string): Promise<{ result: string; usage: { prompt_tokens: number; completion_tokens: number }; model: string }> {
+async function editDraft(text: string): Promise<{
+  result: string
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
   return {
-    result: text
-      .replace('covers', 'examines')
-      .replace('patterns', 'architectural decisions'),
-    usage: { prompt_tokens: 2000, completion_tokens: 1500 },
+    result: text.replace('draft', 'final'),
+    usage: { prompt_tokens: 2_000, completion_tokens: 1_500 },
     model: 'gpt-4o',
   }
 }
 
-// --- Multi-agent workflow ---
-
-async function main() {
-  console.log('Fuze AI -- Multi-Agent Shared Budget\n')
-
+async function main(): Promise<void> {
   const run = createRun('research-team')
-  console.log(`Run ID : ${run.runId}`)
-  console.log(`Ceiling: 50,000 tokens (shared across all agents)\n`)
+  console.log('Fuze AI — Multi-Agent Shared Run')
+  console.log(`  runId  : ${run.runId}`)
+  console.log(`  ceiling: 50,000 tokens (shared across all agents)\n`)
 
-  // --- Researcher agent ---
-  console.log('=== Researcher Agent ===')
+  const search = run.guard(webSearch)
+  const summary = run.guard(summarise)
+  const drafter = run.guard(draft)
+  const editor = run.guard(editDraft)
 
-  const guardedSearch = run.guard(webSearch)
-  const guardedSummarise = run.guard(summarise)
+  console.log('=== Researcher ===')
+  const hits = await search('budget enforcement')
+  console.log(`  search : ${hits.result.length} hits`)
+  const sum = await summary(hits.result)
+  console.log(`  summary: ${sum.result}`)
 
-  const searchResponse = await guardedSearch('budget')
-  console.log('Search results:', searchResponse.results)
+  console.log('\n=== Writer ===')
+  const d = await drafter(sum.result, 'technical')
+  console.log(`  draft  : ${d.result}`)
+  const e = await editor(d.result)
+  console.log(`  final  : ${e.result}`)
 
-  const summaryResponse = await guardedSummarise(searchResponse.results)
-  console.log('Summary:', summaryResponse.result)
-
-  const midStatus = run.getStatus()
-  const midTokens = midStatus.totalTokensIn + midStatus.totalTokensOut
-  console.log(`  [after researcher: ${midTokens} tokens across ${midStatus.stepCount} steps]\n`)
-
-  // --- Writer agent ---
-  console.log('=== Writer Agent ===')
-
-  const guardedDraft = run.guard(draft)
-  const guardedEdit = run.guard(editDraft)
-
-  const draftResponse = await guardedDraft(summaryResponse.result, 'technical')
-  console.log('Draft:', draftResponse.result)
-
-  const editResponse = await guardedEdit(draftResponse.result)
-  console.log('Edited:', editResponse.result)
-  console.log()
-
-  // --- Final run status ---
-  console.log('=== Run Status ===')
   const status = run.getStatus()
-  const totalTokens = status.totalTokensIn + status.totalTokensOut
-  console.log(`  Tokens in      : ${status.totalTokensIn}`)
-  console.log(`  Tokens out     : ${status.totalTokensOut}`)
-  console.log(`  Steps completed: ${status.stepCount}`)
-  console.log(`  Remaining       : ${Math.max(0, 50_000 - totalTokens)} tokens`)
-  console.log()
+  const used = status.totalTokensIn + status.totalTokensOut
+  console.log('\n=== Run Status ===')
+  console.log(`  steps     : ${status.stepCount}`)
+  console.log(`  tokens    : ${status.totalTokensIn} in + ${status.totalTokensOut} out`)
+  console.log(`  remaining : ${Math.max(0, 50_000 - used)} tokens`)
 
   await run.end()
-  console.log('Run ended. Check ./fuze-traces.jsonl for the full trace.')
+  console.log('\nTrace: ./fuze-traces.jsonl')
 }
 
 main().catch(console.error)

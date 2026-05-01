@@ -1,0 +1,37 @@
+{
+  "name": "@fuze-ai/agent-signing-kms",
+  "version": "0.1.0",
+  "description": "Production KMS adapters (AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault) for the Fuze Agent Ed25519Signer interface.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fuze-ai/agent": "0.1.0"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-kms": "^3.600.0",
+    "@google-cloud/kms": "^4.5.0",
+    "@azure/keyvault-keys": "^4.8.0",
+    "node-vault": "^0.10.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

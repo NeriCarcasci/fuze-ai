@@ -1,42 +1,22 @@
-# Example 02 -- Token Ceiling
+# Example 02 — Budget Ceiling
 
-Shows how Fuze AI enforces per-run token limits.
+Configure a per-run token ceiling and watch Fuze block the call that would cross it.
 
-## What it demonstrates
+## How it works
 
-- `configure()` to set a session-wide `max_tokens_per_run` of 100,000
-- `@guard()` wrapping an async call whose response carries OpenAI-shaped usage data
-- Catching `ResourceLimitExceeded` when cumulative tokens cross the ceiling
-- Each call consumes ~58,000 tokens, so the second call pushes the run past the 100,000-token ceiling and is blocked
+`configure()` sets `resource_limits.max_tokens_per_run: 100_000`. Each call to `analyse` returns an OpenAI-shaped response; Fuze reads `prompt_tokens + completion_tokens` after the call and adds them to the running total. When the total would cross the ceiling, the next guarded step raises `ResourceLimitExceeded` before any further work runs.
 
-## How to run
+Per-call usage is ~58,000 tokens (40K prompt + 18K completion), so the second call pushes the run past the 100,000-token ceiling and is blocked.
+
+## Run
 
 ```bash
 pip install fuze-ai
 python main.py
 ```
 
-## Expected output
+## What to look for in the trace
 
-```
-Fuze AI -- Token Ceiling Example
-
-Run ceiling : 100,000 tokens (input + output combined)
-Per call    : ~58,000 tokens (auto-extracted from response.usage)
-
-Call 1 OK      : Chunk "quarterly-report" analysed: sha256=...
-Call 2 BLOCKED : ResourceLimitExceeded: step 'analyse_chunk' exceeded maxTokensPerRun (observed 116000, ceiling 100000)
-  limit    : maxTokensPerRun
-  observed : 116000
-  ceiling  : 100000
-
-Resource-limit enforcement prevented runaway token usage.
-
-Done. Check ./fuze-traces.jsonl for per-step token usage.
-```
-
-## Key takeaway
-
-Token enforcement is immediate -- Fuze checks the cumulative token total after each
-step and blocks the next step if the ceiling would be crossed, rather than allowing
-the overage and reporting it after the fact.
+- `tokens_in` / `tokens_out` on each step record show extracted usage.
+- The step that triggered the ceiling gets a `guard_event` with `type: "kill"` and the limit details.
+- No further steps execute after the ceiling is crossed.

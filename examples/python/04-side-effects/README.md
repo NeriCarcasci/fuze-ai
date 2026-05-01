@@ -1,41 +1,24 @@
-# Example 04 -- Side Effects and Compensation
+# Example 04 — Side Effects & Compensation
 
-Shows how Fuze AI tracks side effects and provides automatic compensation (rollback) when a later step fails.
+Mark a step that touches the outside world with `side_effect=True` and register a `compensate` handler. If a later step fails, the compensation rolls the side-effect back.
 
-## What it demonstrates
+## How it works
 
-- `@guard(side_effect=True, compensate=cancel_fn)` to mark a function as having real-world side effects and to register a compensation handler
-- A two-step workflow: create an invoice, then send a confirmation email
-- When the email step fails, the compensation function is invoked to cancel the invoice
-- Safe rollback of external state changes
+`@guard(side_effect=True, compensate=cancel_invoice)` tells Fuze:
+- This step has real-world consequences (don't blindly retry it).
+- If the run needs to roll back, call `cancel_invoice` with this step's return value.
 
-## How to run
+In this example the receipt step fails. In a daemon-backed pipeline the rollback fires automatically when the run ends in failure; here we trigger it manually for clarity.
+
+## Run
 
 ```bash
 pip install fuze-ai
 python main.py
 ```
 
-## Expected output
+## What to look for in the trace
 
-```
-Fuze AI -- Side Effects Example
-
-Step 1: Creating invoice...
-  [side-effect] Invoice INV-ACME-001 created for $499.99
-  Invoice ID: INV-ACME-001
-
-Step 2: Sending confirmation email...
-  [error] SMTP connection refused: unable to send to billing@acme.example.com
-
-Step 2 failed. Fuze will compensate the side effect...
-  [compensate] Cancelling invoice INV-ACME-001...
-  [compensate] Invoice INV-ACME-001 cancelled.
-
-Done. The invoice was created and then rolled back.
-Check ./fuze-traces.jsonl for the compensation trace.
-```
-
-## Why this matters
-
-AI agents that call external APIs (payment processors, databases, email services) can leave behind partial state when something fails mid-workflow. Fuze's compensation mechanism ensures those side effects are rolled back cleanly, similar to a saga pattern in distributed systems.
+- The `create_invoice` step has `has_side_effect: true`.
+- The `send_receipt` step has an `error` field.
+- A `compensation` record (in daemon-backed traces) shows the rollback succeeded.

@@ -1,0 +1,36 @@
+{
+  "name": "@fuze-ai/agent-sandbox-e2b",
+  "version": "0.1.0",
+  "description": "E2B microVM sandbox adapter for the Fuze Agent framework. Wraps E2B's sandbox SDK as a FuzeSandbox.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@connectrpc/connect": "^2.1.1",
+    "@connectrpc/connect-web": "^2.1.1",
+    "@fuze-ai/agent": "0.1.0"
+  },
+  "optionalDependencies": {
+    "e2b": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,78 +1,33 @@
-# 05 - Multi-Agent Shared Token Ceiling
+# Example 05 — Multi-Agent Shared Run
 
-Demonstrates two agents (researcher + writer) sharing a single token ceiling
-via `createRun()`. All tool calls from both agents are tracked under one run
-context with unified token accounting.
+Two agents (researcher + writer) share one `createRun()` context. All tool calls from both agents share its loop detector and token ceiling.
 
-## What this example shows
-
-1. **Shared run context** -- `createRun('research-team')` creates a run that
-   both agents share. The session-wide `resourceLimits.maxTokensPerRun` ceiling
-   is applied across every call from every agent in that run.
-
-2. **Researcher agent** calls `webSearch` and `summarise`, each wrapped with
-   `run.guard()`. Fuze auto-extracts `tokensIn`/`tokensOut` from the
-   OpenAI-shaped `usage` object returned by each call.
-
-3. **Writer agent** calls `draft` and `editDraft` using the same run. If the
-   researcher has already consumed most of the token ceiling, the writer's
-   calls may trigger `ResourceLimitExceeded`.
-
-4. **`run.getStatus()`** returns `totalTokensIn`, `totalTokensOut`, and
-   `stepCount` across both agents.
-
-5. **`run.end()`** flushes the trace log and marks the run as completed.
-
-## Key API
+## How it works
 
 ```ts
-import { configure, createRun } from 'fuze-ai'
-
-configure({ resourceLimits: { maxTokensPerRun: 50_000 } })
-
 const run = createRun('research-team')
 
-// tokensIn/tokensOut are auto-extracted from the OpenAI-shaped usage data
-// on the return value. No model or pricing configuration needed.
+// Each tool is wrapped via run.guard(), so they all report into the same run.
 const search = run.guard(webSearch)
+const summary = run.guard(summarise)
+const drafter = run.guard(draft)
+const editor = run.guard(editDraft)
 
-await search('query')
-
-console.log(run.getStatus())
-// { totalTokensIn: 500, totalTokensOut: 200, stepCount: 1 }
-
-await run.end()
+// run.getStatus() — { totalTokensIn, totalTokensOut, stepCount }
+// run.end()       — flushes the trace and marks the run completed
 ```
 
-## Run it
+The session-wide `maxTokensPerRun` is enforced across every call from every wrapped tool.
+
+## Run
 
 ```bash
 npm install
 npm start
 ```
 
-## Expected output
+## What to look for in the trace
 
-```
-Fuze AI -- Multi-Agent Shared Budget
-
-Run ID : <uuid>
-Ceiling: 50,000 tokens (shared across all agents)
-
-=== Researcher Agent ===
-Search results: ['[guard.ts] 362 lines -- contains "budget"', ...]
-Summary: Found "N" matching files: ...
-  [after researcher: 6300 tokens across 2 steps]
-
-=== Writer Agent ===
-Draft: [Draft-<hash> | tone=technical] ...
-Edited: [Draft-<hash> | tone=technical] ...
-
-=== Run Status ===
-  Tokens in      : 11000
-  Tokens out     : 4800
-  Steps completed: 4
-  Remaining       : 34200 tokens
-
-Run ended. Check ./fuze-traces.jsonl for the full trace.
-```
+- All four steps share the same `runId`.
+- `tokensIn` / `tokensOut` accumulate across all four calls.
+- A single `run_start` and `run_end` record bracket the steps.

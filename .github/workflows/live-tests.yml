@@ -1,0 +1,62 @@
+name: live-tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: live providers + sandbox
+    runs-on: ubuntu-latest
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+    steps:
+      - name: gate on secrets
+        id: gate
+        run: |
+          if [ -z "${MISTRAL_API_KEY}" ] && [ -z "${E2B_API_KEY}" ]; then
+            echo "no live secrets configured; skipping" >> $GITHUB_STEP_SUMMARY
+            echo "run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "run=true" >> $GITHUB_OUTPUT
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - if: steps.gate.outputs.run == 'true'
+        name: install
+        run: npm install
+
+      - if: steps.gate.outputs.run == 'true'
+        name: build
+        run: npm run build
+
+      - if: steps.gate.outputs.run == 'true' && env.MISTRAL_API_KEY != ''
+        name: providers (live)
+        env:
+          CI_LIVE: '1'
+          CI_LIVE_MISTRAL: '1'
+        run: |
+          npm test --workspace=@fuze-ai/agent-providers | tee providers.log
+          echo "## providers" >> $GITHUB_STEP_SUMMARY
+          tail -n 40 providers.log >> $GITHUB_STEP_SUMMARY
+
+      - if: steps.gate.outputs.run == 'true' && env.E2B_API_KEY != ''
+        name: e2b sandbox (live)
+        env:
+          CI_LIVE: '1'
+          CI_LIVE_E2B: '1'
+        run: |
+          npm test --workspace=@fuze-ai/agent-sandbox-e2b | tee sandbox.log
+          echo "## sandbox-e2b" >> $GITHUB_STEP_SUMMARY
+          tail -n 40 sandbox.log >> $GITHUB_STEP_SUMMARY

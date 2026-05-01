@@ -1,0 +1,38 @@
+{
+  "name": "@fuze-ai/agent-cli",
+  "version": "0.1.0",
+  "description": "Operator/auditor CLI for Fuze Agent. Talks to @fuze-ai/agent-api over HTTP. Distributed via npx.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "fuze": "./bin/fuze.mjs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fuze-ai/agent": "0.1.0",
+    "@fuze-ai/agent-api": "0.1.0",
+    "@fuze-ai/agent-annex-iv": "0.1.0",
+    "@fuze-ai/agent-compliance": "0.1.0",
+    "@fuze-ai/agent-sovereign-terraform": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,61 @@
+#cloud-config
+# Shared cloud-init for Fuze sovereign control-plane hosts.
+# Hardened baseline applied across Hetzner, Scaleway, OVHcloud, and AWS modules.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - fail2ban
+  - ufw
+  - wireguard
+  - auditd
+  - rsyslog
+  - logrotate
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/apt/preferences.d/99-pin-kernel
+    content: |
+      Package: linux-image-generic linux-headers-generic linux-image-6.8.0-45-generic
+      Pin: version 6.8.0-45.45
+      Pin-Priority: 1001
+  - path: /etc/systemd/timesyncd.conf
+    content: |
+      [Time]
+      NTP=time.cloudflare.com
+      FallbackNTP=time.nist.gov
+  - path: /etc/sysctl.d/99-fuze-hardening.conf
+    content: |
+      kernel.kptr_restrict=2
+      kernel.dmesg_restrict=1
+      net.ipv4.conf.all.rp_filter=1
+      net.ipv4.conf.all.log_martians=1
+  - path: /etc/logrotate.d/fuze-audit
+    content: |
+      /var/log/audit/*.log {
+        daily
+        rotate 30
+        compress
+        missingok
+        notifempty
+        sharedscripts
+        postrotate
+          /usr/sbin/service auditd restart > /dev/null 2>&1 || true
+        endscript
+      }
+
+runcmd:
+  - swapoff -a
+  - sed -ri '/\sswap\s/d' /etc/fstab
+  - systemctl enable --now systemd-timesyncd
+  - systemctl enable --now fail2ban
+  - systemctl enable --now auditd
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 51820/udp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - sysctl --system
+
+# No swap (CIS 1.1.1.7 / EU-sovereign compliance: avoid spilling secrets to disk).

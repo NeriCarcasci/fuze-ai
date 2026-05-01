@@ -1,59 +1,50 @@
 """
-Fuze AI -- Example 03: Loop Detection
+Fuze AI — Example 03: Loop Detection
 
-Demonstrates automatic loop detection. When the same function is
-called with identical arguments more than `repeat_threshold` times,
-Fuze raises LoopDetected to prevent infinite-loop burn.
+When the same function is called with identical arguments more than
+`repeat_threshold` times within a sliding window, Fuze raises LoopDetected.
 """
 
 import asyncio
-import hashlib
 
 from fuze_ai import configure, guard, LoopDetected
 
 
-# repeat_threshold=3: the 3rd identical call in the window is blocked.
 configure({
-    "loop_detection": {
-        "repeat_threshold": 3,
-        "window_size": 5,
-    },
+    "defaults": {"on_loop": "kill"},
+    "loop_detection": {"window_size": 5, "repeat_threshold": 3},
 })
 
 
 @guard
-async def fetch_weather(city: str) -> str:
-    """Compute a deterministic 'weather' from the city name."""
-    h = hashlib.md5(city.encode()).hexdigest()
-    temp = int(h[:2], 16) % 35 + 5
-    humidity = int(h[2:4], 16) % 100
-    return f"Weather in {city}: {temp}C, humidity {humidity}%"
+async def fetch_weather(city: str) -> dict:
+    return {
+        "result": f"{city}: 21C, partly cloudy",
+        "usage": {"prompt_tokens": 200, "completion_tokens": 30},
+        "model": "gpt-4o",
+    }
 
 
 async def main() -> None:
-    print("Fuze AI -- Loop Detection Example\n")
-    print("Config: window_size=5, repeat_threshold=3, on_loop=kill\n")
+    print("Fuze AI — Loop Detection\n")
+    print("  window_size: 5, repeat_threshold: 3, on_loop: kill\n")
 
-    # Different cities: no loop triggered
-    print("--- Different cities (no loop) ---")
+    print("Different cities — no loop:")
     for city in ["Paris", "London", "Tokyo"]:
-        result = await fetch_weather(city)
-        print(f"  {result}")
+        r = await fetch_weather(city)
+        print(f"  {r['result']}")
 
-    print()
-
-    # Same city repeated: triggers loop detection
-    print("--- Same city repeated (triggers loop) ---")
+    print("\nSame city repeated — triggers loop:")
     for i in range(1, 7):
         try:
-            result = await fetch_weather("Paris")
-            print(f"  Retry {i} OK: {result}")
+            r = await fetch_weather("Paris")
+            print(f"  retry {i}: ok — {r['result']}")
         except LoopDetected as exc:
-            print(f"  Retry {i} BLOCKED: {exc}")
-            print("\nLoop detection halted the runaway agent.")
+            print(f"  retry {i}: BLOCKED — {exc}")
+            print(f"    signal: {exc.signal['type']}")
             break
 
-    print("\nDone. Check ./fuze-traces.jsonl for the loop trace.")
+    print("\nTrace: ./fuze-traces.jsonl")
 
 
 if __name__ == "__main__":

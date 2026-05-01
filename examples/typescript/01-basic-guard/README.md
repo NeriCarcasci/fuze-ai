@@ -1,39 +1,19 @@
-# Example 01 - Basic Guard
+# Example 01 — Basic Guard
 
-The simplest possible Fuze AI example. Wraps a plain async function with `guard()` and calls it three times with different arguments.
+Wrap one async tool with `guard()` and call it like the original. Every call is traced; tokens are auto-extracted from the OpenAI-shaped `usage` payload.
 
-## What it demonstrates
-
-- Importing `guard` from `fuze-ai`
-- Wrapping an async function so every invocation is automatically traced, token-budget-checked, and loop-monitored
-- Zero-config usage: no `configure()` call needed; Fuze applies sensible defaults (3 retries, 30 s timeout, no token ceiling)
-
-## How to run
+## Run
 
 ```bash
 npm install
 npm start
 ```
 
-## Expected output
-
-```
-Fuze AI -- Basic Guard Example
-
-Search 1: [ 'Result for "AI agent safety": Document about AI safety', 'Result for "AI agent safety": EU AI Act overview' ]
-Search 2: [ 'Result for "budget enforcement": Document about AI safety', 'Result for "budget enforcement": EU AI Act overview' ]
-Search 3: [ 'Result for "loop detection": Document about AI safety', 'Result for "loop detection": EU AI Act overview' ]
-
-All 3 calls completed.
-Check ./fuze-traces.jsonl for the full trace.
-```
-
 ## What to look for in the trace
 
-After the run, open `./fuze-traces.jsonl`. Each line is a JSON object representing one guarded step. Key fields:
+Open `./fuze-traces.jsonl` after the run. Each line is one record:
 
-- `toolName` -- the name of the wrapped function (`searchDocuments`)
-- `argsHash` -- a hash of the arguments passed; differs for each call since the query string changes
-- `latencyMs` -- wall-clock time for the call (should be ~200 ms due to the simulated delay)
-- `tokensIn` / `tokensOut` -- `0` because the return value did not carry OpenAI-shaped usage data
-- `error` -- absent, confirming all three calls succeeded
+- `toolName` — the wrapped function (`classify`)
+- `argsHash` — a hash of the arguments; differs per call
+- `tokensIn` / `tokensOut` — extracted automatically from the returned `usage` field
+- `latencyMs` — wall-clock time per call

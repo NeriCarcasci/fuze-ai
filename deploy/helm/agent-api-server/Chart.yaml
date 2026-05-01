@@ -1,0 +1,17 @@
+apiVersion: v2
+name: agent-api-server
+description: Reference Hono server for the Fuze Agent API. Self-hostable; ships compliance baked in.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/NeriCarcasci/fuze-ai
+sources:
+  - https://github.com/NeriCarcasci/fuze-ai
+keywords:
+  - fuze
+  - agent
+  - llm
+  - compliance
+maintainers:
+  - name: Fuze maintainers

@@ -1,105 +1,59 @@
 """
-Fuze AI -- Example 04: Side Effects and Compensation
+Fuze AI — Example 04: Side Effects & Compensation
 
-Demonstrates side-effect tracking with automatic compensation.
-Creates a real invoice file on disk, then a follow-up email step
-fails. Compensation voids the invoice file.
+Mark a step that touches the outside world with `side_effect=True` and
+register a compensation handler. If a later step fails, the compensation
+rolls the side-effect back. (In a daemon-backed pipeline the rollback
+fires automatically when the run ends in failure; here we trigger it
+manually for clarity.)
 """
 
 import asyncio
-import json
-from datetime import datetime, timezone
-from pathlib import Path
 
 from fuze_ai import guard
 
-INVOICE_FILE = Path(__file__).parent / "invoice.json"
 
+# Pretend payments service — in-memory only.
+invoices: dict[str, dict] = {}
 
-# -- Compensation function --------------------------------------------------
 
 async def cancel_invoice(invoice_id: str) -> None:
-    """Compensate by voiding the invoice file on disk."""
-    if INVOICE_FILE.exists():
-        data = json.loads(INVOICE_FILE.read_text())
-        data["status"] = "void"
-        INVOICE_FILE.write_text(json.dumps(data, indent=2))
-        print(f"  [compensate] Voided invoice {invoice_id} on disk")
-    else:
-        print(f"  [compensate] Invoice file not found (already cleaned up)")
+    inv = invoices.get(invoice_id)
+    if inv is not None:
+        inv["status"] = "void"
+        print(f"  [compensate]  voided {invoice_id}")
 
-
-# -- Guarded side-effect step -----------------------------------------------
 
 @guard(side_effect=True, compensate=cancel_invoice)
 async def create_invoice(customer: str, amount: float) -> str:
-    """Create an invoice. Writes a real JSON file to disk."""
-    invoice_id = f"INV-{customer.upper()[:4]}-001"
-    data = {
-        "id": invoice_id,
-        "customer": customer,
-        "amount": amount,
-        "status": "open",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    INVOICE_FILE.write_text(json.dumps(data, indent=2))
-    print(f"  [side-effect] Wrote {INVOICE_FILE.name}")
-    print(f"  [side-effect] Invoice {invoice_id} created for ${amount:.2f}")
+    invoice_id = f"inv_{len(invoices) + 1}"
+    invoices[invoice_id] = {"customer": customer, "amount": amount, "status": "open"}
+    print(f"  [side-effect] created {invoice_id} — {customer} ${amount}")
     return invoice_id
 
 
-# -- Step that will fail ----------------------------------------------------
+@guard(side_effect=True)
+async def send_receipt(invoice_id: str) -> None:
+    raise RuntimeError(f"SMTP unreachable (invoice {invoice_id})")
 
-@guard
-async def send_confirmation_email(invoice_id: str, recipient: str) -> str:
-    """Simulate an email send that fails."""
-    raise RuntimeError(f"SMTP connection refused: unable to send to {recipient}")
-
-
-# -- Orchestrator -----------------------------------------------------------
 
 async def main() -> None:
-    print("Fuze AI -- Side Effects Example\n")
+    print("Fuze AI — Side Effects & Compensation\n")
 
-    # Clean up any leftover file from a previous run
-    if INVOICE_FILE.exists():
-        INVOICE_FILE.unlink()
+    print("Step 1: create invoice")
+    invoice_id = await create_invoice("Acme Corp", 499.99)
 
-    customer = "Acme Corp"
-    amount = 499.99
-    recipient = "billing@acme.example.com"
-
-    invoice_id = None
+    print("\nStep 2: send receipt (fails)")
     try:
-        # Step 1: create the invoice (real file written to disk)
-        print("Step 1: Creating invoice...")
-        invoice_id = await create_invoice(customer, amount)
-        print(f"  Invoice ID: {invoice_id}")
-        print(f"  File exists: {INVOICE_FILE.exists()}\n")
-
-        # Step 2: send confirmation email (this will fail)
-        print("Step 2: Sending confirmation email...")
-        await send_confirmation_email(invoice_id, recipient)
-
+        await send_receipt(invoice_id)
     except RuntimeError as exc:
-        print(f"  [error] {exc}\n")
-        print("Step 2 failed. Running compensation...")
+        print(f"  failed: {exc}")
 
-        # In a full Fuze daemon pipeline the compensation fires automatically.
-        # Here we show the manual invocation for clarity.
-        if invoice_id is not None:
-            await cancel_invoice(invoice_id)
+    print("\nStep 3: compensate")
+    await cancel_invoice(invoice_id)
 
-    print()
-
-    # Verify the invoice was voided
-    if INVOICE_FILE.exists():
-        data = json.loads(INVOICE_FILE.read_text())
-        print(f'Invoice status on disk: "{data["status"]}"')
-        INVOICE_FILE.unlink()
-
-    print("\nDone. The invoice was created (real file) then voided via compensation.")
-    print("Check ./fuze-traces.jsonl for the side-effect trace.")
+    print(f'\nFinal status of {invoice_id}: "{invoices[invoice_id]["status"]}"')
+    print("Trace: ./fuze-traces.jsonl")
 
 
 if __name__ == "__main__":

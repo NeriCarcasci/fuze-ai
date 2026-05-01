@@ -1,43 +1,44 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+// Fuze AI — Example 01: Basic Guard
+//
+// Wrap an async tool with `guard()` once, then call it as if it were the
+// original function. Every call is traced; tokens are auto-extracted from
+// OpenAI-shaped `usage` payloads.
+
 import { guard } from 'fuze-ai'
 
-// Real operation: reads a file and returns a content summary with hash.
-async function searchDocuments(query: string): Promise<{ file: string; size: number; hash: string }[]> {
-  // Search the packages/core/src directory for files matching the query
-  const srcDir = join(import.meta.dirname, '..', '..', '..', 'packages', 'core', 'src')
-  const files = readdirSync(srcDir).filter(f => f.endsWith('.ts'))
-  const matches = files
-    .filter(f => f.toLowerCase().includes(query.toLowerCase()) || query === '*')
-    .slice(0, 3)
-
-  return matches.map(file => {
-    const content = readFileSync(join(srcDir, file), 'utf-8')
-    const hash = createHash('sha256').update(content).digest('hex').slice(0, 12)
-    return { file, size: content.length, hash }
-  })
+// Pretend this calls an LLM. The shape of the return value lets Fuze
+// auto-extract token counts without any extractor config.
+async function classify(text: string): Promise<{
+  result: 'short' | 'long'
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
+  return {
+    result: text.length > 50 ? 'long' : 'short',
+    usage: { prompt_tokens: Math.ceil(text.length / 4), completion_tokens: 4 },
+    model: 'gpt-4o',
+  }
 }
 
-const protectedSearch = guard(searchDocuments)
+// Wrap once. `guarded` has the same signature as `classify`.
+const guarded = guard(classify)
 
-async function main() {
-  console.log('Fuze AI -- Basic Guard Example\n')
+async function main(): Promise<void> {
+  console.log('Fuze AI — Basic Guard\n')
 
-  console.log('Searching core source files with guard() protection...\n')
+  const samples = [
+    'hello',
+    'a much longer piece of text that exceeds fifty characters end-to-end',
+    'short again',
+  ]
 
-  const r1 = await protectedSearch('guard')
-  console.log('Search "guard":', r1)
+  for (const text of samples) {
+    const r = await guarded(text)
+    const total = r.usage.prompt_tokens + r.usage.completion_tokens
+    console.log(`  ${r.result.padEnd(6)} — ${total.toString().padStart(3)} tokens`)
+  }
 
-  const r2 = await protectedSearch('budget')
-  console.log('Search "budget":', r2)
-
-  const r3 = await protectedSearch('loop')
-  console.log('Search "loop":', r3)
-
-  console.log('\nAll 3 guarded calls completed.')
-  console.log('Each call was traced with timing, args hash, and token usage.')
-  console.log('Check ./fuze-traces.jsonl for the full trace.')
+  console.log('\nTrace: ./fuze-traces.jsonl')
 }
 
 main().catch(console.error)

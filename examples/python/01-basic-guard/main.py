@@ -1,52 +1,43 @@
 """
-Fuze AI -- Example 01: Basic Guard
+Fuze AI — Example 01: Basic Guard
 
-Wraps a plain async function with the @guard decorator and calls it
-three times with different arguments. Uses real file hashing.
+Wrap an async tool with the `@guard` decorator. Every call is traced;
+tokens are auto-extracted from OpenAI-shaped `usage` payloads.
 """
 
 import asyncio
-import hashlib
-from pathlib import Path
 
 from fuze_ai import guard
 
 
 @guard
-async def search_documents(query: str) -> list[dict[str, str]]:
-    """Search Python source files in the fuze_ai package for a query term."""
-    # Search the TS core source (3 dirs up from examples/python/01-basic-guard -> D:\fuze)
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent
-    src_dir = repo_root / "packages" / "core" / "src"
-    # Also try the Python package if available
-    py_src = repo_root.parent / "fuze-python" / "src" / "fuze_ai"
-    if py_src.exists():
-        src_dir = py_src
-
-    results = []
-    for f in sorted(src_dir.glob("*.py" if src_dir.name == "fuze_ai" else "*.ts")):
-        content = f.read_text(encoding="utf-8", errors="replace")
-        if query.lower() in content.lower():
-            h = hashlib.sha256(content.encode()).hexdigest()[:12]
-            results.append({"file": f.name, "lines": str(content.count("\n") + 1), "hash": h})
-    return results[:5]
+async def classify(text: str) -> dict:
+    """Pretend this calls an LLM. The return shape lets Fuze auto-extract tokens."""
+    return {
+        "result": "long" if len(text) > 50 else "short",
+        "usage": {
+            "prompt_tokens": max(1, len(text) // 4),
+            "completion_tokens": 4,
+        },
+        "model": "gpt-4o",
+    }
 
 
 async def main() -> None:
-    print("Fuze AI -- Basic Guard Example\n")
-    print("Searching source files with @guard protection...\n")
+    print("Fuze AI — Basic Guard\n")
 
-    r1 = await search_documents("budget")
-    print("Search 'budget':", r1)
+    samples = [
+        "hello",
+        "a much longer piece of text that exceeds fifty characters end-to-end",
+        "short again",
+    ]
 
-    r2 = await search_documents("loop")
-    print("Search 'loop'  :", r2)
+    for text in samples:
+        r = await classify(text)
+        total = r["usage"]["prompt_tokens"] + r["usage"]["completion_tokens"]
+        print(f"  {r['result']:<6} — {total:>3} tokens")
 
-    r3 = await search_documents("guard")
-    print("Search 'guard' :", r3)
-
-    print("\nAll 3 guarded calls completed.")
-    print("Check ./fuze-traces.jsonl for the full trace.")
+    print("\nTrace: ./fuze-traces.jsonl")
 
 
 if __name__ == "__main__":

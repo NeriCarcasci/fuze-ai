@@ -1,0 +1,17 @@
+{
+  "name": "agent-employment-screening",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "run": "node --experimental-strip-types index.ts",
+    "evals": "node --experimental-strip-types evals.ts"
+  },
+  "dependencies": {
+    "@fuze-ai/agent": "file:../../../packages/agent",
+    "@fuze-ai/agent-eval": "file:../../../packages/agent-eval",
+    "@fuze-ai/agent-policy-cerbos": "file:../../../packages/agent-policy-cerbos",
+    "@fuze-ai/agent-signing": "file:../../../packages/agent-signing",
+    "zod": "^3.23.0"
+  }
+}

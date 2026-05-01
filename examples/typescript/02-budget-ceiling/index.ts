@@ -1,52 +1,51 @@
-import { createHash } from 'node:crypto'
+// Fuze AI — Example 02: Budget Ceiling
+//
+// Configure a per-run token ceiling, then make repeated guarded calls.
+// Once the cumulative input + output token count crosses the ceiling,
+// the next call throws ResourceLimitExceeded.
+
 import { configure, guard, ResourceLimitExceeded } from 'fuze-ai'
 
-// Configure: 100k-token run ceiling. Once combined input+output crosses this
-// line, the next step that trips the check throws ResourceLimitExceeded.
 configure({
-  resourceLimits: {
-    maxTokensPerRun: 100_000,
-  },
+  resourceLimits: { maxTokensPerRun: 100_000 },
 })
 
-// Simulates an LLM-powered analysis step. The return value carries OpenAI-shaped
-// usage data; Fuze auto-extracts tokensIn/tokensOut from it.
-async function analyseChunk(chunk: string): Promise<{ result: string; usage: { prompt_tokens: number; completion_tokens: number }; model: string }> {
-  const hash = createHash('sha256').update(chunk).digest('hex')
+async function analyse(chunk: string): Promise<{
+  result: string
+  usage: { prompt_tokens: number; completion_tokens: number }
+  model: string
+}> {
   return {
-    result: `Chunk "${chunk}" analysed: sha256=${hash.slice(0, 16)}...`,
+    result: `analysed "${chunk}"`,
     usage: { prompt_tokens: 40_000, completion_tokens: 18_000 },
     model: 'gpt-4o',
   }
 }
 
-const protectedAnalyse = guard(analyseChunk)
+const guardedAnalyse = guard(analyse)
 
-async function main() {
-  console.log('Fuze AI -- Token Ceiling Example\n')
-  console.log('Run ceiling : 100,000 tokens (input + output combined)')
-  console.log('Per call    : ~58,000 tokens (auto-extracted from response.usage)\n')
+async function main(): Promise<void> {
+  console.log('Fuze AI — Budget Ceiling\n')
+  console.log('  ceiling : 100,000 tokens (input + output combined)')
+  console.log('  per call: ~58,000 tokens (auto-extracted from usage)\n')
 
-  const chunks = ['quarterly-report', 'customer-feedback', 'incident-log', 'roadmap-draft', 'compliance-audit']
+  const chunks = ['report', 'feedback', 'incidents', 'roadmap', 'audit']
 
   for (let i = 0; i < chunks.length; i++) {
     try {
-      const response = await protectedAnalyse(chunks[i])
-      console.log(`Step ${i + 1} OK     : ${response.result}`)
+      const r = await guardedAnalyse(chunks[i])
+      console.log(`  step ${i + 1}: ok — ${r.result}`)
     } catch (err) {
       if (err instanceof ResourceLimitExceeded) {
-        console.log(`Step ${i + 1} BLOCKED: ${err.message}`)
-        console.log(`  limit    : ${err.details.limit}`)
-        console.log(`  observed : ${err.details.observed}`)
-        console.log(`  ceiling  : ${err.details.ceiling}`)
-        console.log('\nResource-limit enforcement prevented runaway token usage.')
+        console.log(`  step ${i + 1}: BLOCKED — ${err.message}`)
+        console.log(`    observed: ${err.details.observed} / ${err.details.ceiling}`)
         break
       }
       throw err
     }
   }
 
-  console.log('\nCheck ./fuze-traces.jsonl for per-step token usage.')
+  console.log('\nTrace: ./fuze-traces.jsonl')
 }
 
 main().catch(console.error)

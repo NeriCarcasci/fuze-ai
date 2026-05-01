@@ -1,0 +1,93 @@
+# Reference Traefik dynamic config for mTLS edge termination.
+# Placeholders to replace before deploy:
+#   <server_name>      — public hostname (e.g. agent.example.eu)
+#   <api_upstream>     — http://host:port of the agent-api-server
+#   <ca_bundle_path>   — path to the customer-trusted CA bundle (PEM)
+#   <server_cert_path> — server certificate (PEM)
+#   <server_key_path>  — server private key (PEM)
+#
+# Pair with a static config that:
+#   - exposes entryPoint `websecure` on :443
+#   - sets entryPoints.websecure.transport.respondingTimeouts.readTimeout >= 120s
+#   - watches this file via providers.file.filename
+
+http:
+  routers:
+    agent-api:
+      rule: "Host(`<server_name>`)"
+      entryPoints:
+        - websecure
+      service: agent-api
+      tls:
+        options: mtls-required
+      middlewares:
+        - rate-limit-edge
+        - forward-client-cert
+        - security-headers
+
+    agent-api-health:
+      rule: "Host(`<server_name>`) && Path(`/v1/health`)"
+      entryPoints:
+        - websecure
+      service: agent-api
+      priority: 100
+      tls:
+        options: mtls-required
+
+  services:
+    agent-api:
+      loadBalancer:
+        servers:
+          - url: "<api_upstream>"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "-1ms"   # streaming (SSE)
+
+  middlewares:
+    rate-limit-edge:
+      rateLimit:
+        average: 20
+        burst: 40
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    forward-client-cert:
+      passTLSClientCert:
+        info:
+          notAfter: true
+          notBefore: true
+          serialNumber: true
+          subject:
+            commonName: true
+            organization: true
+            country: true
+          issuer:
+            commonName: true
+
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        referrerPolicy: "no-referrer"
+        customResponseHeaders:
+          Server: ""
+
+tls:
+  certificates:
+    - certFile: "<server_cert_path>"
+      keyFile: "<server_key_path>"
+      stores:
+        - default
+
+  options:
+    mtls-required:
+      minVersion: VersionTLS13
+      maxVersion: VersionTLS13
+      sniStrict: true
+      clientAuth:
+        caFiles:
+          - "<ca_bundle_path>"
+        clientAuthType: RequireAndVerifyClientCert

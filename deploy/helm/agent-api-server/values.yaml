@@ -1,0 +1,105 @@
+image:
+  registry: ghcr.io
+  repository: nericarcasci/agent-api-server
+  tag: ""  # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 3000
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  LOG_LEVEL: info
+
+# Secrets are mounted from an existing Secret resource; do not put values here.
+existingSecret: ""
+
+redis:
+  url: ""  # e.g. redis://redis.redis.svc.cluster.local:6379/0
+
+suspendStore:
+  dsn: ""  # postgres://... or sqlite:///var/lib/agent/suspend.db
+
+# mTLS terminator runs as a sidecar (Envoy / nginx). Disabled by default — terminate at ingress instead.
+mtls:
+  sidecar:
+    enabled: false
+    image: envoyproxy/envoy:v1.31-latest
+    configMap: ""  # name of ConfigMap holding envoy.yaml
+    listenPort: 8443
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  labels: {}
+
+networkPolicy:
+  enabled: true
+  # Egress is denied by default; only the destinations below are allowed.
+  egress:
+    llmProviders:
+      - host: api.mistral.ai
+        port: 443
+      - host: api.openai.com
+        port: 443
+      - host: api.anthropic.com
+        port: 443
+    kms:
+      - host: ""  # e.g. kms.eu-west-1.amazonaws.com
+        port: 443
+    dns:
+      enabled: true
+
+probes:
+  liveness:
+    path: /v1/health
+    initialDelaySeconds: 10
+    periodSeconds: 20
+  readiness:
+    path: /v1/health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []

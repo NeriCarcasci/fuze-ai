@@ -1,0 +1,73 @@
+# Reference Caddyfile for mTLS edge termination.
+# Placeholders to replace before deploy:
+#   <server_name>      — public hostname (e.g. agent.example.eu)
+#   <api_upstream>     — host:port of the agent-api-server (e.g. agent-api-server:3000)
+#   <ca_bundle_path>   — path to the customer-trusted CA bundle (PEM)
+#   <server_cert_path> — server certificate (PEM)
+#   <server_key_path>  — server private key (PEM)
+
+{
+    # Caddy uses TLS 1.3 by default; pin it explicitly.
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+<server_name> {
+    tls <server_cert_path> <server_key_path> {
+        protocols tls1.3 tls1.3
+        client_auth {
+            mode require_and_verify
+            trust_pool file {
+                pem_file <ca_bundle_path>
+            }
+        }
+    }
+
+    # Edge rate limit (requires the caddy-ratelimit plugin or a sidecar limiter).
+    @ratelimited {
+        not path /v1/health
+    }
+    rate_limit @ratelimited {
+        zone edge {
+            key {client_ip}
+            window 1s
+            events 20
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Forward client-cert metadata to the upstream so the API can attribute calls.
+    request_header X-Client-Cert-CN     {tls_client_subject}
+    request_header X-Client-Cert-Serial {tls_client_serial}
+    request_header X-Client-Cert-Issuer {tls_client_issuer}
+
+    handle /v1/health {
+        reverse_proxy <api_upstream>
+    }
+
+    handle {
+        reverse_proxy <api_upstream> {
+            flush_interval -1   # streaming (SSE)
+            transport http {
+                read_timeout 120s
+                write_timeout 120s
+                keepalive 60s
+            }
+            header_up Host {host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    log {
+        format json
+        output file /var/log/caddy/access.log
+    }
+}

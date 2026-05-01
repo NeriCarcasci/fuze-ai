@@ -2,8 +2,6 @@
 
 Runtime safety + observability middleware for AI agents. EU-first compliance posture. Self-hostable; cloud is an opt-in transport.
 
-This file is auto-loaded by AGENTS.md-aware tools (Codex, Cursor, Aider, Factory) and by Claude Code via `CLAUDE.md`. Keep it under 150 lines. Depth lives in `.context/`.
-
 ## Hard rules (zero tolerance)
 
 1. **No AI attribution anywhere.** No `Co-Authored-By: Claude`, `Generated with Claude Code`, `Authored by AI`, or equivalent — in commits, comments, docs, READMEs, PR descriptions, or code. If you see one, remove it.

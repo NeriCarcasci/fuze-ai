@@ -1,0 +1,38 @@
+{
+  "name": "@fuze-ai/agent-api-server",
+  "version": "0.1.0",
+  "description": "Reference Hono-based server implementing the @fuze-ai/agent-api contract. Customer self-hostable; ships with skeleton bearer auth.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fuze-ai/agent": "0.1.0",
+    "@fuze-ai/agent-api": "0.1.0",
+    "@fuze-ai/agent-suspend-store": "0.1.0",
+    "@fuze-ai/agent-durable": "0.1.0",
+    "hono": "^4.6.0"
+  },
+  "optionalDependencies": {
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

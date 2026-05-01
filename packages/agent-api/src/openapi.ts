@@ -268,6 +268,18 @@ export const buildOpenApi = (info?: { title?: string; version?: string }): JsonS
         },
       },
     },
+    [PATH_TEMPLATES.runSpans]: {
+      get: {
+        operationId: 'getRunSpans',
+        summary: 'Fetch every chained span for a run (auditor replay)',
+        parameters: [pathParam('runId')],
+        responses: {
+          '200': jsonResponse(SubjectSpansResponseSchema, 'Spans for the run'),
+          '403': errorResponse('Tenant does not own this run'),
+          '404': errorResponse('Run not found'),
+        },
+      },
+    },
     [PATH_TEMPLATES.health]: {
       get: {
         operationId: 'getHealth',

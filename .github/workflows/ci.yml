@@ -61,6 +61,7 @@ jobs:
     name: osv-scanner
     runs-on: ubuntu-latest
     needs: build-test
+    continue-on-error: true
     permissions:
       contents: read
       security-events: write

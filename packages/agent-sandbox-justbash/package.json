@@ -21,7 +21,7 @@
     "@fuze-ai/agent": "0.1.0"
   },
   "optionalDependencies": {
-    "just-bash": "^2.14.3"
+    "just-bash": "^2.14.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

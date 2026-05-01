@@ -13,6 +13,10 @@
     "./conformance": {
       "import": "./dist/conformance/index.js",
       "types": "./dist/conformance/index.d.ts"
+    },
+    "./quickstart": {
+      "import": "./dist/quickstart/index.js",
+      "types": "./dist/quickstart/index.d.ts"
     }
   },
   "scripts": {

@@ -11,9 +11,7 @@ Required:
   - Dismiss stale approvals on new commits
   - Require review from Code Owners (if `CODEOWNERS` is present)
 - Require status checks to pass before merging
-  - `ci / build-test (node 20)`
-  - `ci / build-test (node 22)`
-  - `ci / build-test (node 24)`
+  - `ci / build / test`
   - `ci / sbom`
   - `ci / osv-scanner`
   - Require branches to be up to date before merging

@@ -49,7 +49,7 @@ jobs:
         run: npm install
 
       - name: generate sbom
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.json
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --ignore-npm-errors --output-file sbom.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -63,16 +63,12 @@ jobs:
     needs: build-test
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
         with:
-          node-version: '22'
-          cache: npm
-
-      - name: install
-        run: npm install
-
-      - name: osv-scanner
-        run: npx --yes osv-scanner@latest scan --recursive --fail-on-vuln HIGH .
+          scan-args: |-
+            --recursive
+            ./

@@ -159,6 +159,7 @@ const buildToolCtx = <TDeps>(
   input: AgentRunInput,
   stepId: StepId,
   attribute: (k: string, v: AttrValue) => void,
+  toolRole: 'tool' | null = null,
 ): Ctx<TDeps> => {
   const invoke = async <TInput, TOutput>(name: string, sub: TInput): Promise<TOutput> => {
     const tool = state.toolsByName.get(name)
@@ -167,6 +168,20 @@ const buildToolCtx = <TDeps>(
     if (result.kind === 'value') return result.value as TOutput
     throw new Error(`tool ${name} via ctx.invoke failed: ${result.reason}`)
   }
+  const emitChild = toolRole === 'tool'
+    ? (child: { span: string; attrs: Readonly<Record<string, unknown>>; content?: unknown }): void => {
+        const now = state.clock().toISOString()
+        state.emitter.emit({
+          span: child.span,
+          role: 'tool',
+          stepId,
+          startedAt: now,
+          endedAt: now,
+          attrs: child.attrs,
+          ...(child.content !== undefined ? { content: child.content } : {}),
+        })
+      }
+    : undefined
   return buildCtx<TDeps>({
     tenant: input.tenant,
     principal: input.principal,
@@ -177,6 +192,7 @@ const buildToolCtx = <TDeps>(
     secrets: input.secrets,
     attribute,
     invoke,
+    ...(emitChild ? { emitChild } : {}),
   })
 }
 
@@ -206,7 +222,7 @@ const runOneTool = async <TDeps, TOut>(
   const attribute = (k: string, v: AttrValue): void => {
     collectedAttrs[k] = v
   }
-  const ctx = buildToolCtx<TDeps>(state, input, stepId, attribute)
+  const ctx = buildToolCtx<TDeps>(state, input, stepId, attribute, 'tool')
 
   const policyResult = await evaluatePolicySafe(state.policy, tool, args, ctx as unknown as Ctx<unknown>)
   state.emitter.emit({

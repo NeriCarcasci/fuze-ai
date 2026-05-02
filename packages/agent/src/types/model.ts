@@ -24,7 +24,7 @@ export interface ModelStep {
 export interface FuzeModel {
   readonly providerName: string
   readonly modelName: string
-  readonly residency: 'eu' | 'us' | 'unknown'
+  readonly residency: 'eu' | 'us' | 'multi' | 'unknown'
   generate(input: ModelGenerateInput): Promise<ModelStep>
 }
 

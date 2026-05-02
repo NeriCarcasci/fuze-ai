@@ -8,6 +8,12 @@ export interface ToolHandle {
   invoke<TInput, TOutput>(name: string, input: TInput): Promise<TOutput>
 }
 
+export interface EmitChildInput {
+  readonly span: string
+  readonly attrs: Readonly<Record<string, unknown>>
+  readonly content?: unknown
+}
+
 export interface Ctx<TDeps> {
   readonly tenant: TenantId
   readonly principal: PrincipalId
@@ -18,6 +24,8 @@ export interface Ctx<TDeps> {
   readonly secrets: SecretsHandle
   attribute(key: string, value: AttrValue): void
   invoke<TInput, TOutput>(name: string, input: TInput): Promise<TOutput>
+  /** Emit a child span chained into the current run; provided by the agent loop. */
+  emitChild?: (input: EmitChildInput) => void
 }
 
 export interface CtxBuildInput<TDeps> {
@@ -30,6 +38,7 @@ export interface CtxBuildInput<TDeps> {
   readonly secrets: SecretsHandle
   readonly attribute: (key: string, value: AttrValue) => void
   readonly invoke: ToolHandle['invoke']
+  readonly emitChild?: (input: EmitChildInput) => void
 }
 
 export const buildCtx = <TDeps>(input: CtxBuildInput<TDeps>): Ctx<TDeps> => ({
@@ -42,4 +51,5 @@ export const buildCtx = <TDeps>(input: CtxBuildInput<TDeps>): Ctx<TDeps> => ({
   secrets: input.secrets,
   attribute: input.attribute,
   invoke: input.invoke,
+  emitChild: input.emitChild ?? (() => undefined),
 })

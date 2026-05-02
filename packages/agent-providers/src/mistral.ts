@@ -1,5 +1,6 @@
-import type { FuzeModel, ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
+import type { ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
 import { callOpenAiCompat, type FetchLike } from './openai-compat.js'
+import type { ModelProvider } from './residency.js'
 
 export interface MistralModelOptions {
   readonly apiKey: string
@@ -10,7 +11,7 @@ export interface MistralModelOptions {
 const MISTRAL_URL = 'https://api.mistral.ai/v1/chat/completions'
 const DEFAULT_MODEL = 'mistral-large-latest'
 
-export const mistralModel = (opts: MistralModelOptions): FuzeModel => {
+export const mistralModel = (opts: MistralModelOptions): ModelProvider<'eu'> => {
   const modelName = opts.model ?? DEFAULT_MODEL
   const fetchImpl: FetchLike =
     opts.fetchImpl ?? ((url, init) => fetch(url, init))

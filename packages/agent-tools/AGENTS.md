@@ -4,13 +4,18 @@ First-party tool catalog built on `@fuze-ai/agent`. Every tool here delegates ex
 
 ## Scope
 
-Five tools shipping in 0.1.0:
+Tools shipping in 0.1.0:
 
 - `bashTool` — shell command via sandbox
 - `fetchTool` — HTTP GET via sandbox curl, with allowlist
 - `readFileTool`, `writeFileTool`, `listFilesTool` — sandbox filesystem ops
+- `grepTool` — regex search across the sandbox FS, returns matches with path/line/text
+- `globTool` — glob expansion against the sandbox FS, returns matching paths
+- `editTool` — atomic file edit (oldString → newString); refuses no-ops and occurrence-count mismatches
 
-All five emit `dataClassification: 'public'` because outputs are logs, response bodies, and file paths. If a caller binds a tool to subject data, that's their classification problem at the agent boundary.
+All emit `dataClassification: 'public'` because outputs are logs, response bodies, and file paths. If a caller binds a tool to subject data, that's their classification problem at the agent boundary.
+
+`grep`/`glob`/`edit` send their structured input as JSON via the sandbox `stdin` and expect a JSON envelope on `stdout`. The sandbox adapter is responsible for interpreting the verbs (`grep`, `glob`, `edit`) and returning the envelope shape documented in each tool's source.
 
 ## Hard rules
 
@@ -28,6 +33,9 @@ src/
   read-file.ts
   write-file.ts
   list-files.ts
+  grep.ts
+  glob.ts
+  edit.ts
   index.ts
 test/
 ```

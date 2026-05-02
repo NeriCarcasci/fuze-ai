@@ -1,5 +1,6 @@
-import type { FuzeModel, ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
+import type { ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
 import { callOpenAiCompat, type FetchLike } from './openai-compat.js'
+import type { ModelProvider } from './residency.js'
 
 export interface ScalewayModelOptions {
   readonly apiKey: string
@@ -11,7 +12,7 @@ export interface ScalewayModelOptions {
 const buildUrl = (projectId: string): string =>
   `https://api.scaleway.ai/${projectId}/v1/chat/completions`
 
-export const scalewayModel = (opts: ScalewayModelOptions): FuzeModel => {
+export const scalewayModel = (opts: ScalewayModelOptions): ModelProvider<'eu'> => {
   const fetchImpl: FetchLike =
     opts.fetchImpl ?? ((url, init) => fetch(url, init))
   const url = buildUrl(opts.projectId)

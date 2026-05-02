@@ -84,6 +84,18 @@ export const executeApprovedTool = async (
   const attribute = (k: string, v: AttrValue): void => {
     collectedAttrs[k] = v
   }
+  const emitChild = (child: { span: string; attrs: Readonly<Record<string, unknown>>; content?: unknown }): void => {
+    const now = clock().toISOString()
+    deps.emitter.emit({
+      span: child.span,
+      role: 'tool',
+      stepId,
+      startedAt: now,
+      endedAt: now,
+      attrs: child.attrs,
+      ...(child.content !== undefined ? { content: child.content } : {}),
+    })
+  }
   const ctx: Ctx<unknown> = buildCtx({
     tenant: deps.tenant,
     principal: deps.principal,
@@ -96,6 +108,7 @@ export const executeApprovedTool = async (
     invoke: async () => {
       throw new Error('approved tools cannot invoke siblings outside the loop')
     },
+    emitChild,
   })
 
   let outcome: ExecuteApprovedToolOutcome

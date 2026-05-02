@@ -13,12 +13,21 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
+    "test": "tsc --noEmit -p tsconfig.test.json && vitest run",
+    "test:types": "tsc --noEmit -p tsconfig.test.json",
     "test:watch": "vitest"
   },
   "license": "MIT",
   "dependencies": {
     "@fuze-ai/agent": "0.1.0"
+  },
+  "peerDependencies": {
+    "openai": ">=4",
+    "@anthropic-ai/sdk": ">=0.30"
+  },
+  "peerDependenciesMeta": {
+    "openai": { "optional": true },
+    "@anthropic-ai/sdk": { "optional": true }
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

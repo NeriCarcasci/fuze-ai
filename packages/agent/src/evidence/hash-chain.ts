@@ -48,13 +48,33 @@ export class HashChain<T = Record<string, unknown>> {
   }
 }
 
-export const verifyChain = <T>(records: readonly ChainedRecord<T>[]): boolean => {
+export interface VerifyChainOptions {
+  readonly acceptedSchemaVersions?: { readonly min: number; readonly max: number }
+}
+
+const DEFAULT_ACCEPTED_VERSIONS = { min: 1, max: 1 } as const
+
+const readSpanSchemaVersion = (payload: unknown): number => {
+  if (payload === null || typeof payload !== 'object') return 1
+  const v = (payload as { spanSchemaVersion?: unknown }).spanSchemaVersion
+  if (v === undefined) return 1
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 1) return v
+  return -1
+}
+
+export const verifyChain = <T>(
+  records: readonly ChainedRecord<T>[],
+  options: VerifyChainOptions = {},
+): boolean => {
+  const accepted = options.acceptedSchemaVersions ?? DEFAULT_ACCEPTED_VERSIONS
   let prev = ZERO_HASH
   for (let i = 0; i < records.length; i++) {
     const r = records[i]
     if (!r) return false
     if (r.sequence !== i) return false
     if (r.prevHash !== prev) return false
+    const version = readSpanSchemaVersion(r.payload)
+    if (version < accepted.min || version > accepted.max) return false
     const canonical = canonicalize({ sequence: r.sequence, prevHash: r.prevHash, payload: r.payload })
     const expected = createHash('sha256').update(canonical).digest('hex')
     if (expected !== r.hash) return false

@@ -7,6 +7,8 @@ import { HashChain, type ChainedRecord } from './hash-chain.js'
 
 export type SpanRole = 'agent' | 'model' | 'tool' | 'guardrail' | 'policy'
 
+export const CURRENT_SPAN_SCHEMA_VERSION = 1 as const
+
 export interface SpanCommonAttrs {
   readonly 'fuze.tenant.id': TenantId
   readonly 'fuze.principal.id': PrincipalId
@@ -28,6 +30,7 @@ export interface EvidenceSpan {
   readonly attrs: Readonly<Record<string, unknown>>
   readonly contentHash?: string
   readonly contentRef?: string
+  readonly spanSchemaVersion?: number
 }
 
 export interface EvidenceEmitterDeps {

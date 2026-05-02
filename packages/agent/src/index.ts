@@ -3,8 +3,8 @@ export * from './types/index.js'
 export { canonicalize } from './evidence/canonical.js'
 export { redact, redactString } from './evidence/redact.js'
 export { HashChain, verifyChain } from './evidence/hash-chain.js'
-export type { ChainedRecord } from './evidence/hash-chain.js'
-export { EvidenceEmitter } from './evidence/emitter.js'
+export type { ChainedRecord, VerifyChainOptions } from './evidence/hash-chain.js'
+export { EvidenceEmitter, CURRENT_SPAN_SCHEMA_VERSION } from './evidence/emitter.js'
 export type { EvidenceSpan, SpanRole, SpanCommonAttrs, EvidenceEmitterDeps } from './evidence/emitter.js'
 
 export { StaticPolicyEngine } from './policy/static.js'
@@ -49,5 +49,5 @@ export type { InProcessSandboxOptions, TenantWatchdog } from './sandbox/in-proce
 
 export { defineTool } from './agent/define-tool.js'
 export { defineAgent } from './agent/define-agent.js'
-export type { DefineAgentInput } from './agent/define-agent.js'
+export type { DefineAgentInput, ResidencyConstraint } from './agent/define-agent.js'
 export { inMemorySecrets } from './agent/secrets-noop.js'

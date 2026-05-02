@@ -1,5 +1,6 @@
-import type { FuzeModel, ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
+import type { ModelGenerateInput, ModelStep } from '@fuze-ai/agent'
 import { callOpenAiCompat, type FetchLike } from './openai-compat.js'
+import type { ModelProvider } from './residency.js'
 
 export interface OvhModelOptions {
   readonly apiKey: string
@@ -18,7 +19,7 @@ const deriveModelName = (endpoint: string): string => {
   }
 }
 
-export const ovhModel = (opts: OvhModelOptions): FuzeModel => {
+export const ovhModel = (opts: OvhModelOptions): ModelProvider<'eu'> => {
   const fetchImpl: FetchLike =
     opts.fetchImpl ?? ((url, init) => fetch(url, init))
   const modelName = opts.model ?? deriveModelName(opts.modelEndpoint)

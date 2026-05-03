@@ -18,7 +18,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@fuze-ai/agent": "0.1.0"
+    "@fuze-ai/agent": "0.1.0",
+    "pdfkit": "^0.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

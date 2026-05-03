@@ -356,6 +356,17 @@ This section exists so you can make an informed procurement decision. The follow
 
 Fuze is MIT licensed. Contributions welcome.
 
+### Workspace inventory
+
+- `packages/core` - TypeScript SDK primitives.
+- `packages/agent` - Fuze Agent runtime, evidence, HITL, policy, and sandbox orchestration.
+- `packages/agent-annex-iv` - Annex IV technical documentation compiler.
+- `packages/agent-fria` - Article 27 Fundamental Rights Impact Assessment compiler.
+- `packages/agent-incident` - Article 73 incident report compiler.
+- `packages/agent-synthesis` - Deterministic cross-run workflow synthesis.
+- `packages/agent-compliance` - Compliance helpers and unified report compilation entry point.
+- `packages/python` - Python SDK.
+
 ```bash
 git clone https://github.com/NeriCarcasci/fuze-ai
 cd fuze-ai

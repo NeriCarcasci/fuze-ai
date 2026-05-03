@@ -20,3 +20,6 @@ export type {
 
 export { generateDpiaPdf } from './dpia-pdf.js'
 export type { GenerateDpiaPdfOptions } from './dpia-pdf.js'
+
+export { compileReport } from './report-compiler.js'
+export type { ReportKind, CompileReportInput, CompiledReport } from './report-compiler.js'

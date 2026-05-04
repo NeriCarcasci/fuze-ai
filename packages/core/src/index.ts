@@ -20,6 +20,24 @@ function fireAndForget(promise: Promise<unknown>): void {
   promise.catch(() => undefined)
 }
 
+function buildRunTelemetryConfig(resolved: ReturnType<typeof ConfigLoader.merge>): object {
+  const resourceLimits = resolved.resourceLimits
+  return {
+    guard: {
+      timeoutMs: resolved.timeout,
+      maxIterations: resolved.maxIterations,
+      loopDetectionEnabled: true,
+      loopThreshold: resolved.loopDetection.repeatThreshold,
+      maxTokensPerRun: resourceLimits.maxTokensPerRun ?? null,
+      maxSteps: resourceLimits.maxSteps ?? null,
+      maxWallClockMs: resourceLimits.maxWallClockMs ?? null,
+    },
+    resourceLimits,
+    ...(resourceLimits.maxSteps !== undefined ? { maxStepsPerRun: resourceLimits.maxSteps } : {}),
+    ...(resourceLimits.maxTokensPerRun !== undefined ? { maxTokensPerRun: resourceLimits.maxTokensPerRun } : {}),
+  }
+}
+
 export type { GuardOptions, FuzeConfig, RunContext, ResourceLimits, ResourceUsageStatus, UsageStatus } from './types.js'
 export { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js'
 export { ResourceLimitTracker } from './resource-limit-tracker.js'
@@ -62,7 +80,7 @@ export function guard<T extends (...args: unknown[]) => unknown>(
     service,
   }
 
-  fireAndForget(service.sendRunStart(runId, fn.name || 'anonymous', {}))
+  fireAndForget(service.sendRunStart(runId, fn.name || 'anonymous', buildRunTelemetryConfig(resolved)))
 
   const guardFn = createGuardWrapper(resolved, context)
   return guardFn(fn, options)
@@ -89,7 +107,7 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
   }
 
   context.traceRecorder.startRun(runId, agentId, resolved)
-  fireAndForget(service.sendRunStart(runId, agentId, {}))
+  fireAndForget(service.sendRunStart(runId, agentId, buildRunTelemetryConfig(resolved)))
 
   const guardFn = createGuardWrapper(resolved, context)
 

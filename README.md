@@ -47,11 +47,10 @@ const search = guard(async (query: string) => {
   return await vectorDb.search(query)
 })
 
-// Pass model — Fuze reads actual token counts from the LLM response automatically.
-// No manual estimatedTokensIn/Out needed.
+// Fuze reads actual token counts from recognised LLM response shapes.
 const analyse = guard(
   async (text: string) => openai.chat.completions.create({ model: 'gpt-4o', messages: [...] }),
-  { model: 'openai/gpt-4o', maxTokens: 50000 }
+  { resourceLimits: { maxTokensPerRun: 50000 } }
 )
 
 // Mark dangerous operations. Fuze won't blindly retry these.
@@ -77,8 +76,8 @@ from fuze_ai import guard
 def search(query: str):
     return vector_db.search(query)
 
-# Pass model — Fuze reads actual tokens from the response automatically.
-@guard(model='openai/gpt-4o', max_tokens=50000)
+# Fuze reads actual tokens from recognised LLM response shapes.
+@guard(resource_limits={"max_tokens_per_run": 50000})
 def analyse(text: str):
     return openai.chat.completions.create(model='gpt-4o', messages=[...])
 
@@ -149,7 +148,7 @@ Live runs, trace replay, token/step usage charts, kill buttons, and an EU AI Act
 
 ## Token Extraction
 
-When you pass `model` to `guard()`, Fuze automatically reads the actual token counts from the LLM's response object — no manual `estimatedTokensIn`/`estimatedTokensOut` needed.
+Fuze automatically reads actual token counts from recognised LLM response objects — no manual `estimatedTokensIn`/`estimatedTokensOut` needed.
 
 ```typescript
 import { guard, createRun } from 'fuze-ai'
@@ -157,13 +156,13 @@ import { guard, createRun } from 'fuze-ai'
 // Fuze inspects the return value and finds the usage fields automatically.
 const callLLM = guard(
   async (prompt: string) => openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }] }),
-  { model: 'openai/gpt-4o' }
+  { resourceLimits: { maxTokensPerRun: 200000 } }
 )
 
 // All tools in the same run share one resource limit + loop detector.
-const run = createRun('my-agent', { maxTokensPerRun: 200000, maxStepsPerRun: 50 })
-const search = run.guard(searchFn, { model: 'openai/gpt-4o' })
-const summarise = run.guard(summariseFn, { model: 'anthropic/claude-opus-4-6' })
+const run = createRun('my-agent', { resourceLimits: { maxTokensPerRun: 200000, maxSteps: 50 } })
+const search = run.guard(searchFn)
+const summarise = run.guard(summariseFn)
 ```
 
 Fuze recognises response shapes from all major providers out of the box:
@@ -185,7 +184,6 @@ For custom providers or non-standard shapes, use `usageExtractor`:
 const fn = guard(
   async () => myCustomLLM.call(),
   {
-    model: 'my-provider/model',
     usageExtractor: (result) => ({
       tokensIn: result.metadata.input,
       tokensOut: result.metadata.output,
@@ -194,15 +192,7 @@ const fn = guard(
 )
 ```
 
-### Pre-flight token estimate
-
-Before the call, Fuze estimates token usage from the serialised argument size (4 chars ≈ 1 token, 50% output ratio). This catches obviously over-limit calls before making the API request. After the call, the estimate is replaced with the actual extracted count.
-
-```typescript
-// This is blocked before the API call is even made — 10M token args exceed any sensible limit
-const fn = guard(hugeArgs, { model: 'openai/gpt-4o', maxTokens: 50000 })
-await fn('x'.repeat(40_000_000)) // → throws LimitExceeded immediately
-```
+Token limits are enforced from recorded usage before each subsequent guarded step. Step count and wall-clock ceilings are checked before the step runs.
 
 ## Configuration
 
@@ -238,7 +228,7 @@ Per-function overrides always take precedence:
 
 ```typescript
 // This function gets a tighter ceiling than the project default
-const riskyCall = guard(fn, { maxTokens: 5000, timeout: 5000 })
+const riskyCall = guard(fn, { resourceLimits: { maxTokensPerRun: 5000 }, timeout: 5000 })
 ```
 
 ## Framework Adapters

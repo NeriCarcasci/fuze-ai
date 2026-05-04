@@ -99,6 +99,27 @@ def _run_async_safely(coro: Any) -> None:
         loop.create_task(_swallow(coro))
 
 
+def _run_telemetry_config(resolved: dict[str, Any]) -> dict[str, Any]:
+    resource_limits = dict(resolved.get("resource_limits") or {})
+    out: dict[str, Any] = {
+        "guard": {
+            "timeout_ms": resolved.get("timeout"),
+            "max_iterations": resolved.get("max_iterations"),
+            "loop_detection_enabled": True,
+            "loop_threshold": (resolved.get("loop_detection") or {}).get("repeat_threshold"),
+            "max_tokens_per_run": resource_limits.get("max_tokens_per_run"),
+            "max_steps": resource_limits.get("max_steps"),
+            "max_wall_clock_ms": resource_limits.get("max_wall_clock_ms"),
+        },
+        "resource_limits": resource_limits,
+    }
+    if "max_steps" in resource_limits:
+        out["max_steps_per_run"] = resource_limits["max_steps"]
+    if "max_tokens_per_run" in resource_limits:
+        out["max_tokens_per_run"] = resource_limits["max_tokens_per_run"]
+    return out
+
+
 def _get_or_create_service(config: FuzeConfig) -> FuzeService:
     global _service
     if _service is None:
@@ -144,6 +165,7 @@ def guard(_fn: Optional[Callable[..., Any]] = None, /, **options: Any) -> Any:
         resolved = ConfigLoader.merge(config, options)
         service = _get_or_create_service(resolved)
         ctx = _build_context(resolved, service)
+        _run_async_safely(service.send_run_start(ctx.run_id, fn.__name__ or "anonymous", _run_telemetry_config(resolved)))
         return _make_wrapper(fn, resolved, ctx)
 
     if _fn is not None:
@@ -188,7 +210,7 @@ def create_run(config: Optional[dict[str, Any]] = None) -> RunContext:
     ctx = _build_context(resolved, service)
 
     ctx.trace_recorder.start_run(ctx.run_id, agent_id, dict(resolved))
-    _run_async_safely(service.send_run_start(ctx.run_id, agent_id, dict(resolved)))
+    _run_async_safely(service.send_run_start(ctx.run_id, agent_id, _run_telemetry_config(resolved)))
 
     return RunContext(ctx, resolved)
 

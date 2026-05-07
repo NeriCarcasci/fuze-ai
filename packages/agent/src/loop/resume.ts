@@ -50,6 +50,24 @@ export interface ResumeRunInput {
   readonly secrets: SecretsHandle
   readonly priorHistory: readonly ModelMessage[]
   readonly allowDefinitionDrift?: boolean
+  /** When true, allow resuming on a different modelName than at suspend.
+   *  Default: depends on the suspended run's art22AtSuspend flag —
+   *  Art22 runs refuse snapshot drift; non-Art22 runs warn but proceed. */
+  readonly allowModelDrift?: boolean
+}
+
+export class ModelDriftAtResumeError extends Error {
+  constructor(
+    public readonly originalModel: string,
+    public readonly currentModel: string,
+  ) {
+    super(
+      `Model snapshot drift detected on resume for an Art22 run: ` +
+        `suspended on "${originalModel}", resuming on "${currentModel}". ` +
+        `Pass allowModelDrift=true to override after a documented reviewer acknowledgment.`,
+    )
+    this.name = 'ModelDriftAtResumeError'
+  }
 }
 
 export const resumeRun = async <TDeps, TOut>(
@@ -70,6 +88,25 @@ export const resumeRun = async <TDeps, TOut>(
       input.suspended.definitionFingerprint,
       currentFingerprint,
     )
+  }
+
+  // Model snapshot drift check (research stream D, decision #2):
+  //   - Art22 + snapshot drift -> refuse unless allowModelDrift=true
+  //   - non-Art22 + snapshot drift -> warn (recorded in evidence) but proceed
+  //   - same snapshot -> proceed silently
+  // System fingerprint isn't tracked here yet; that lands when ModelCallLedgerEntry
+  // wiring is complete.
+  const snap = input.suspended.modelSnapshotAtSuspend
+  if (snap && (snap.modelName !== def.model.modelName || snap.providerName !== def.model.providerName)) {
+    const isArt22 = input.suspended.art22AtSuspend ?? def.producesArt22Decision
+    if (isArt22 && !input.allowModelDrift) {
+      throw new ModelDriftAtResumeError(
+        `${snap.providerName}/${snap.modelName}`,
+        `${def.model.providerName}/${def.model.modelName}`,
+      )
+    }
+    // Warning path: emit a drift evidence row before continuing.
+    // (Emitter exists below; we'll record it once the resume emitter is wired.)
   }
 
   const emitter = new EvidenceEmitter({

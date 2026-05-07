@@ -13,6 +13,14 @@ export interface OversightPlanRef {
   readonly trainingId?: string
 }
 
+export type PlanRequirement = boolean | 'auto-when-high-risk'
+
+export interface PlanningConfig {
+  readonly required?: PlanRequirement
+  readonly minSteps?: number
+  readonly maxSteps?: number
+}
+
 export interface AgentDefinition<TDeps, TOut> {
   readonly purpose: string
   readonly lawfulBasis: GdprLawfulBasis
@@ -28,6 +36,17 @@ export interface AgentDefinition<TDeps, TOut> {
   readonly retryBudget: number
   readonly retention: RetentionPolicy
   readonly deps: TDeps
+  /** Behavioral instructions (~150 chars). Distinct from purpose, which is
+   *  the Article 13 transparency line. Optional during the migration. */
+  readonly instructions?: string
+  /** Hash of resolved instructions; set by fromMarkdown() or computed by the runtime. */
+  readonly instructionsHash?: string
+  /** Co-located markdown context files. Hashed individually for evidence. */
+  readonly context?: ReadonlyArray<{ readonly path: string; readonly sha256: string; readonly bytes: number }>
+  /** Planning configuration. Default 'auto-when-high-risk' enforced at runtime. */
+  readonly planning?: PlanningConfig
+  /** Capability envelopes the parent can dispatch into at runtime. */
+  readonly canDispatch?: ReadonlyArray<import('./role.js').AnyAgentRole>
 }
 
 export interface AgentRunInput {

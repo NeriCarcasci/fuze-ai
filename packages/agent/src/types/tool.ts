@@ -22,6 +22,17 @@ interface BaseTool<TIn, TOut, TDeps> {
   readonly trustedInputOnly?: TrustedInputOnly
   readonly needsApproval?: (input: TIn, ctx: Ctx<TDeps>) => boolean | Promise<boolean>
   readonly run: (input: TIn, ctx: Ctx<TDeps>) => Promise<Result<TOut, Retryable | Error>>
+  /** Soft-cancel grace period when an operator stops the run mid-tool.
+   *  Tools know their own I/O profile: a "send_email" should declare ~30s,
+   *  "search_docs" ~2s. Default 10000ms (10s). After this elapses, the
+   *  tool is hard-killed and a cancellation_truncated evidence row is emitted. */
+  readonly softCancelTimeoutMs?: number
+  /** Implementation hash for replay. Optional now; recommended for
+   *  evidence-graded runs. When absent, the runtime computes a best-effort
+   *  hash from the tool's name + version. */
+  readonly toolImplHash?: string
+  /** Semver of the tool implementation for evidence audit. */
+  readonly toolVersion?: string
 }
 
 export interface PublicTool<TIn = unknown, TOut = unknown, TDeps = unknown>

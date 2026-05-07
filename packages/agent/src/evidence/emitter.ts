@@ -45,6 +45,9 @@ export interface EvidenceEmitterDeps {
   readonly captureFullContent: boolean
   readonly sink: (record: ChainedRecord<EvidenceSpan>) => void | Promise<void>
   readonly resumeFrom?: { readonly chainHead: string; readonly nextSequence: number }
+  /** Synchronous post-emit hook. Used by PlanState auto-capture to link
+   *  evidence rows to the active plan step without involving the model. */
+  readonly onEmit?: (record: ChainedRecord<EvidenceSpan>) => void
 }
 
 export class EvidenceEmitter {
@@ -109,6 +112,13 @@ export class EvidenceEmitter {
 
     const record = this.chain.append(span)
     this.buffered.push(record)
+    if (this.deps.onEmit) {
+      try {
+        this.deps.onEmit(record)
+      } catch {
+        // onEmit must not break emission
+      }
+    }
     void Promise.resolve(this.deps.sink(record)).catch(() => undefined)
     return record
   }

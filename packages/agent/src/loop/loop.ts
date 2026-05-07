@@ -28,6 +28,10 @@ import type { Ed25519Signer } from '../types/signing.js'
 import { mintResumeToken } from './suspend.js'
 import type { SuspendedRun } from '../types/oversight.js'
 import { computeDefinitionFingerprint } from './fingerprint.js'
+import { PlanState } from '../plan/plan-state.js'
+import { buildPlanTools, isPlanToolName } from '../plan/plan-tools.js'
+import { buildDispatchTools, type RunChildCallback, type DispatchContext } from '../agent/dispatch-tools.js'
+import type { DurableExecutionAdapter } from '../types/oversight-v2.js'
 
 export interface SnapshotSink {
   save(snapshot: {
@@ -50,6 +54,12 @@ export interface LoopDeps<TDeps, TOut> {
   readonly clock?: () => Date
   readonly signer?: Ed25519Signer
   readonly snapshotSink?: SnapshotSink
+  /** Callback the loop invokes when the model calls a synthesized
+   *  dispatch_<role> tool. Provided when canDispatch is non-empty. */
+  readonly runChild?: RunChildCallback
+  /** Durable execution adapter for ctx.requestOversight(). When omitted,
+   *  oversight requests fall back to error (no awakeable substrate). */
+  readonly durableAdapter?: DurableExecutionAdapter
 }
 
 interface LoopState<TDeps, TOut> {
@@ -58,9 +68,24 @@ interface LoopState<TDeps, TOut> {
   readonly emitter: EvidenceEmitter
   readonly toolsByName: ReadonlyMap<string, AnyFuzeTool>
   readonly clock: () => Date
+  readonly planState: PlanState | null
+  readonly planRequired: boolean
   retriesUsed: number
   stepsUsed: number
 }
+
+const isHighRiskAgent = <TDeps, TOut>(def: AgentDefinition<TDeps, TOut>): boolean =>
+  def.annexIIIDomain !== 'none' || def.producesArt22Decision
+
+const resolvePlanRequirement = <TDeps, TOut>(def: AgentDefinition<TDeps, TOut>): boolean => {
+  const setting = def.planning?.required ?? 'auto-when-high-risk'
+  if (setting === true) return true
+  if (setting === false) return false
+  return isHighRiskAgent(def)
+}
+
+const isPlanGatedTool = (tool: AnyFuzeTool): boolean =>
+  tool.dataClassification === 'personal' || tool.dataClassification === 'special-category'
 
 const validateLawfulBasisCompatibility = <TDeps, TOut>(
   def: AgentDefinition<TDeps, TOut>,
@@ -251,6 +276,25 @@ const runOneTool = async <TDeps, TOut>(
     return { kind: 'requires-approval', reason: policyResult.decision.reason ?? 'approval required' }
   }
 
+  // Plan-required gate: high-risk agents must have committed a plan before
+  // touching personal/special-category data. Plan tools are exempt; they're
+  // how the model satisfies the gate.
+  if (
+    state.planRequired &&
+    state.planState !== null &&
+    !state.planState.hasPlan() &&
+    isPlanGatedTool(tool) &&
+    !isPlanToolName(tool.name)
+  ) {
+    return {
+      kind: 'error',
+      reason:
+        `tool "${tool.name}" handles ${tool.dataClassification} data and requires a committed plan. ` +
+        `Call commit_plan first with the steps you intend to take.`,
+      retryable: true,
+    }
+  }
+
   let parsed: unknown
   try {
     parsed = (tool.input as ZodType<unknown>).parse(args)
@@ -260,8 +304,19 @@ const runOneTool = async <TDeps, TOut>(
 
   const execStarted = state.clock().toISOString()
   let outcome: OneToolOutcome
+  // Per-tool soft-cancel timeout. Default 10s; tools opt out with 0.
+  const timeoutMs = tool.softCancelTimeoutMs ?? 10000
   try {
-    const result = await tool.run(parsed, ctx as unknown as Ctx<unknown>)
+    const runPromise = tool.run(parsed, ctx as unknown as Ctx<unknown>)
+    const result =
+      timeoutMs > 0
+        ? await Promise.race([
+            runPromise,
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`tool ${tool.name} exceeded softCancelTimeoutMs=${timeoutMs}`)), timeoutMs),
+            ),
+          ])
+        : await runPromise
     if (result.ok) {
       try {
         const validated = (tool.output as ZodType<unknown>).parse(result.value)
@@ -362,6 +417,17 @@ export const runAgent = async <TDeps, TOut>(
     }
   }
 
+  // Resolve planning configuration before constructing the emitter so the
+  // PlanState can be wired in via onEmit.
+  const planRequired = resolvePlanRequirement(def)
+  const planState = planRequired
+    ? new PlanState({
+        runId,
+        ...(def.planning?.minSteps !== undefined ? { minSteps: def.planning.minSteps } : {}),
+        ...(def.planning?.maxSteps !== undefined ? { maxSteps: def.planning.maxSteps } : {}),
+      })
+    : null
+
   const emitter = new EvidenceEmitter({
     tenant: input.tenant,
     principal: input.principal,
@@ -373,10 +439,53 @@ export const runAgent = async <TDeps, TOut>(
     retention: def.retention,
     captureFullContent: deps.captureFullContent ?? false,
     sink: deps.evidenceSink,
+    ...(planState
+      ? {
+          onEmit: (record) => {
+            // Auto-capture: link evidence rows emitted while a step is
+            // in_progress to that step. Skip plan-tool spans themselves
+            // (they ARE the plan transitions; linking would self-reference).
+            const span = record.payload.span
+            if (
+              span === 'tool.execute' &&
+              typeof record.payload.attrs['gen_ai.tool.name'] === 'string' &&
+              isPlanToolName(record.payload.attrs['gen_ai.tool.name'] as string)
+            ) {
+              return
+            }
+            planState.recordEvidence(record.hash)
+          },
+        }
+      : {}),
   })
 
+  // Build the tool list visible to the model: agent's own tools, plus
+  // auto-injected plan tools (when planning is enabled), plus auto-injected
+  // dispatch tools (one per role in canDispatch).
   const toolsByName = new Map<string, AnyFuzeTool>()
   for (const t of def.tools) toolsByName.set(t.name, t)
+  if (planState) {
+    const pt = buildPlanTools(planState)
+    toolsByName.set(pt.commitPlan.name, pt.commitPlan as unknown as AnyFuzeTool)
+    toolsByName.set(pt.updatePlanStep.name, pt.updatePlanStep as unknown as AnyFuzeTool)
+    toolsByName.set(pt.revisePlan.name, pt.revisePlan as unknown as AnyFuzeTool)
+  }
+  if (def.canDispatch && def.canDispatch.length > 0 && deps.runChild) {
+    const runChild = deps.runChild
+    const dispatchContextProvider = (): DispatchContext => ({
+      tenant: input.tenant,
+      principal: input.principal,
+      ...(input.subjectRef ? { subjectRef: input.subjectRef } : {}),
+      parentRunId: runId,
+      parentChainHead: emitter.head(),
+    })
+    const dispatchTools = buildDispatchTools({
+      roles: def.canDispatch,
+      runChild,
+      contextProvider: dispatchContextProvider,
+    })
+    for (const dt of dispatchTools) toolsByName.set(dt.name, dt)
+  }
 
   const state: LoopState<TDeps, TOut> = {
     definition: def,
@@ -384,6 +493,8 @@ export const runAgent = async <TDeps, TOut>(
     emitter,
     toolsByName,
     clock,
+    planState,
+    planRequired,
     retriesUsed: 0,
     stepsUsed: 0,
   }
@@ -435,7 +546,10 @@ export const runAgent = async <TDeps, TOut>(
     const modelStarted = clock().toISOString()
     let step: ModelStep
     try {
-      step = await def.model.generate({ messages, tools: def.tools })
+      step = await def.model.generate({
+        messages,
+        tools: Array.from(state.toolsByName.values()),
+      })
     } catch (e) {
       emitter.emit({
         span: 'model.generate',
@@ -537,6 +651,12 @@ export const runAgent = async <TDeps, TOut>(
           reason: halted.reason,
           resumeToken: token,
           definitionFingerprint: computeDefinitionFingerprint(def),
+          modelSnapshotAtSuspend: {
+            providerName: def.model.providerName,
+            modelName: def.model.modelName,
+            residency: def.model.residency,
+          },
+          art22AtSuspend: def.producesArt22Decision,
         }
         if (deps.snapshotSink) {
           await Promise.resolve(

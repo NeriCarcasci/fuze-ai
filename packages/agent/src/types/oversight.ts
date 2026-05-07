@@ -22,6 +22,15 @@ export interface SuspendedRun {
   readonly reason: string
   readonly resumeToken: ResumeToken
   readonly definitionFingerprint: string
+  /** Captured at suspend so the resume path can detect model drift. */
+  readonly modelSnapshotAtSuspend?: {
+    readonly providerName: string
+    readonly modelName: string
+    readonly residency: string
+  }
+  /** True iff the agent's producesArt22Decision was set at suspend time.
+   *  Determines whether snapshot drift on resume blocks (refuse) or warns. */
+  readonly art22AtSuspend?: boolean
 }
 
 export interface OversightDecision {

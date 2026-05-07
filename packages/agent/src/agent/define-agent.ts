@@ -66,5 +66,10 @@ export const defineAgent = <
     retryBudget: spec.retryBudget,
     retention: spec.retention ?? DEFAULT_RETENTION,
     deps: spec.deps,
+    ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
+    ...(spec.instructionsHash !== undefined ? { instructionsHash: spec.instructionsHash } : {}),
+    ...(spec.context !== undefined ? { context: spec.context } : {}),
+    ...(spec.planning !== undefined ? { planning: spec.planning } : {}),
+    ...(spec.canDispatch !== undefined ? { canDispatch: spec.canDispatch } : {}),
   }
 }

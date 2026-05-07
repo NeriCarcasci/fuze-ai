@@ -82,3 +82,12 @@ Enforced by tooling (eslint, ruff, prettier, black configs) — don't restate ru
 - `.context/product.md` — EU framing, out-of-scope list, why we made the calls we made.
 
 When in doubt, read the nearest `AGENTS.md` (per-package files override this one for that package's specifics). Then read the relevant `.context/` file. Don't guess.
+
+## Agent SDK (separate from `fuze-ai` safety SDK)
+
+`packages/agent/` is the opinionated agent framework, not the middleware. It carries
+its own model: `defineAgent` for top-level agents with compliance metadata,
+`defineAgentRole` for capability envelopes a parent can dispatch into, an
+auto-injected plan tool (`commit_plan` / `update_plan_step` / `revise_plan`), and
+durable Article 14 oversight via `requestOversight`. See [packages/agent/AGENTS.md](packages/agent/AGENTS.md)
+for the full model and rule list.

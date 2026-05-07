@@ -275,6 +275,53 @@ Every `tools/call` is intercepted: resource caps checked, loop detected, side-ef
 
 Token usage is extracted automatically from MCP tool responses when they contain recognisable LLM response shapes.
 
+## Agent SDK (`@fuze-ai/agent`)
+
+The safety SDK above wraps existing agent code. **The Agent SDK is the opinionated
+framework for teams building agents with compliance baked in from the start.** Same
+hash-chained evidence ledger, but the type system enforces lawful basis, data
+classification, and EU residency before code compiles.
+
+```typescript
+import { defineAgent, defineAgentRole, fromMarkdown } from '@fuze-ai/agent'
+
+// Capability envelope — declares what tools/data classes a child can touch
+const researcher = defineAgentRole({
+  name: 'researcher',
+  instructions: fromMarkdown('./roles/researcher/instructions.md').resolved,
+  tools: [searchPolicies, getPrecedent],
+  dataClassification: 'public',
+  outputSchema: z.object({ summary: z.string(), citations: z.array(z.string()) }),
+  outputViews: {
+    table: z.object({ rows: z.array(z.record(z.string(), z.unknown())) }),
+  },
+})
+
+// Top-level agent — full compliance metadata, can dispatch into envelopes
+const orchestrator = defineAgent({
+  purpose: 'Triage incoming planning permission applications',
+  lawfulBasis: 'public-task',
+  annexIIIDomain: 'essential-services',
+  art14OversightPlan: { id: 'planning-oversight-v1' },
+  producesArt22Decision: false,
+  instructions: fromMarkdown('./agents/triage/instructions.md').resolved,
+  context: fromMarkdown.dir('./agents/triage/context/').files,
+  canDispatch: [researcher, kycChecker],
+  // Auto-injected at runtime: commit_plan, update_plan_step, revise_plan
+  // (high-risk agents must commit_plan before touching personal data)
+  model, tools, output, guardrails, retention, deps, maxSteps: 10, retryBudget: 2,
+})
+```
+
+**What you get:**
+- **Plans as first-class evidence.** Stable step IDs, append-only revisions with `derivedFrom` edges for splits, per-step lifecycle timestamps, evidence rows auto-linked to the active step.
+- **Capability envelopes for delegation.** Children can't escape their declared envelope (tool whitelist, data class ceiling, residency); dispatch tools are auto-generated from `canDispatch` with typed Zod schemas.
+- **Article 14 oversight via durable execution.** `ctx.requestOversight()` suspends the run via a pluggable durable adapter (Restate-shaped); reviewer signature binds the human decision to the hash chain. Modify-decisions create a chain fork pointing at the human's substituted args, not the model's.
+- **Drift refusal on resume.** A run paused on `gpt-4o-2024-08-06` and resumed on `gpt-4o-2024-11-20` with `producesArt22Decision: true` refuses unless the reviewer explicitly acknowledges the drift.
+- **`expectedDeterminism` on every model call.** We never claim reproducibility we can't deliver.
+
+See [packages/agent/AGENTS.md](packages/agent/AGENTS.md) for the full model and the 13 hard rules.
+
 ## EU AI Act
 
 EU AI Act enforcement begins **August 2, 2026**. Penalties up to **€35M or 7% of global annual revenue**.

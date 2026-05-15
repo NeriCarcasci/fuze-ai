@@ -77,7 +77,7 @@ export type {
   ApprovalAction,
   ResumeToken,
   SuspendedRun,
-  OversightDecision,
+  ResumeDecision,
   ResumeInput,
   ResumeTokenStore,
   SuspendStore,

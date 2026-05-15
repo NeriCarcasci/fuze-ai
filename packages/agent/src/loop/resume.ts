@@ -7,7 +7,7 @@ import type {
 } from '../types/agent.js'
 import type {
   SuspendedRun,
-  OversightDecision,
+  ResumeDecision,
   ResumeTokenStore,
 } from '../types/oversight.js'
 import type { Ed25519Verifier } from '../types/signing.js'
@@ -43,7 +43,7 @@ export interface ResumeRunDeps<TDeps, TOut> {
 
 export interface ResumeRunInput {
   readonly suspended: SuspendedRun
-  readonly decision: OversightDecision
+  readonly decision: ResumeDecision
   readonly tenant: TenantId
   readonly principal: PrincipalId
   readonly subjectRef?: SubjectRef

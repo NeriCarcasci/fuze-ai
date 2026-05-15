@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   ResumeToken,
-  OversightDecision,
+  ResumeDecision,
   ResumeTokenStore,
   SuspendedRun,
 } from '../types/oversight.js'
@@ -19,7 +19,7 @@ export interface EvaluateApprovalDeps {
 
 export interface ApprovalOutcome {
   readonly continued: boolean
-  readonly action: OversightDecision['action']
+  readonly action: ResumeDecision['action']
   readonly emittedSpanSequence: number
   readonly overrideArgs?: Readonly<Record<string, unknown>>
 }
@@ -29,7 +29,7 @@ export const evaluateApproval = async (
   input: {
     readonly suspended: SuspendedRun
     readonly token: ResumeToken
-    readonly decision: OversightDecision
+    readonly decision: ResumeDecision
   },
 ): Promise<ApprovalOutcome> => {
   const clock = deps.clock ?? (() => new Date())

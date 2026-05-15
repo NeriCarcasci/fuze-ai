@@ -33,7 +33,7 @@ export interface SuspendedRun {
   readonly art22AtSuspend?: boolean
 }
 
-export interface OversightDecision {
+export interface ResumeDecision {
   readonly action: ApprovalAction
   readonly rationale: string
   readonly overseerId: string
@@ -43,7 +43,7 @@ export interface OversightDecision {
 
 export interface ResumeInput {
   readonly resumeToken: ResumeToken
-  readonly decision: OversightDecision
+  readonly decision: ResumeDecision
 }
 
 export class ResumeTokenInvalidError extends Error {
@@ -68,7 +68,7 @@ export interface ResumeTokenStore {
 export interface SuspendStore {
   save(run: SuspendedRun): Promise<void>
   load(runId: RunId): Promise<SuspendedRun | null>
-  markResumed(runId: RunId, decision: OversightDecision): Promise<void>
+  markResumed(runId: RunId, decision: ResumeDecision): Promise<void>
   eraseBySubjectRef(subjectHmac: string): Promise<number>
 }
 

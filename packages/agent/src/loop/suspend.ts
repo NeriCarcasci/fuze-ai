@@ -5,7 +5,7 @@ import type {
   SuspendedRun,
   ResumeInput,
   ResumeTokenStore,
-  OversightDecision,
+  ResumeDecision,
 } from '../types/oversight.js'
 import { ResumeTokenInvalidError, ResumeTokenReplayError } from '../types/oversight.js'
 import type { Ed25519Signer, Ed25519Verifier } from '../types/signing.js'
@@ -96,7 +96,7 @@ export const buildSuspendedRun = (input: {
   definitionFingerprint: input.definitionFingerprint,
 })
 
-export const decisionFingerprint = (decision: OversightDecision): string =>
+export const decisionFingerprint = (decision: ResumeDecision): string =>
   createHash('sha256')
     .update(
       encoder.encode(

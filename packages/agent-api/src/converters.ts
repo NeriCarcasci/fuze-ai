@@ -7,7 +7,7 @@ import {
 import type {
   ChainedRecord,
   EvidenceSpan,
-  OversightDecision,
+  ResumeDecision,
   ResumeToken,
   SuspendedRun,
 } from '@fuze-ai/agent'
@@ -43,15 +43,15 @@ export const toSuspendedRun = (
 
 export const toOversightDecision = (
   wire: PostDecisionRequest['decision'],
-): OversightDecision => {
-  const result: { -readonly [K in keyof OversightDecision]?: OversightDecision[K] } = {
+): ResumeDecision => {
+  const result: { -readonly [K in keyof ResumeDecision]?: ResumeDecision[K] } = {
     action: wire.action,
     rationale: wire.rationale,
     overseerId: wire.overseerId,
   }
   if (wire.trainingId !== undefined) result.trainingId = wire.trainingId
   if (wire.overrideArgs !== undefined) result.overrideArgs = wire.overrideArgs
-  return result as OversightDecision
+  return result as ResumeDecision
 }
 
 export const toChainedRecord = (

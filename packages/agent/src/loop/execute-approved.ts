@@ -5,7 +5,7 @@ import { buildCtx } from '../types/ctx.js'
 import type { AnyFuzeTool } from '../types/tool.js'
 import type { Result, Retryable } from '../types/result.js'
 import { isRetryable } from '../types/result.js'
-import type { SuspendedRun, OversightDecision } from '../types/oversight.js'
+import type { SuspendedRun, ResumeDecision } from '../types/oversight.js'
 import type { EvidenceEmitter } from '../evidence/emitter.js'
 import { makeStepId } from '../types/brand.js'
 import type { TenantId, PrincipalId } from '../types/brand.js'
@@ -24,7 +24,7 @@ export interface ExecuteApprovedToolDeps {
 
 export interface ExecuteApprovedToolInput {
   readonly suspended: SuspendedRun
-  readonly decision: OversightDecision
+  readonly decision: ResumeDecision
 }
 
 export interface ExecuteApprovedToolOutcome {

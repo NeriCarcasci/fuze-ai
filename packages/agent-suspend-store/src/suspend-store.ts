@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type {
-  OversightDecision,
+  ResumeDecision,
   ResumeToken,
   SuspendStore,
   SuspendedRun,
@@ -81,7 +81,7 @@ export class SqliteSuspendStore implements SuspendStore {
     return rowToSuspendedRun(row)
   }
 
-  async markResumed(runId: RunId, decision: OversightDecision): Promise<void> {
+  async markResumed(runId: RunId, decision: ResumeDecision): Promise<void> {
     const stmt = this.db.prepare(
       `UPDATE suspended_runs
        SET decision_json = ?, decided_at = ?

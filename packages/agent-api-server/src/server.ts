@@ -12,7 +12,7 @@ import {
   toOversightDecision,
 } from '@fuze-ai/agent-api'
 import { verifyChain } from '@fuze-ai/agent'
-import type { OversightDecision, SuspendStore } from '@fuze-ai/agent'
+import type { ResumeDecision, SuspendStore } from '@fuze-ai/agent'
 import type { DurableRunStore } from '@fuze-ai/agent-durable'
 import type { TenantId, RunId } from '@fuze-ai/agent'
 import { makeTenantId, makeRunId } from '@fuze-ai/agent'
@@ -46,7 +46,7 @@ const DEFAULT_SPANS_RATE_LIMIT: RateLimitOptions = { windowMs: 60_000, max: 1000
 const DEFAULT_DECISIONS_RATE_LIMIT: RateLimitOptions = { windowMs: 60_000, max: 60 }
 
 interface DecisionEnvelope {
-  readonly decision: OversightDecision
+  readonly decision: ResumeDecision
   readonly recordedAt: string
 }
 

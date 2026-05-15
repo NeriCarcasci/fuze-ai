@@ -71,6 +71,11 @@ export interface FuzeConfig {
   }
   /** Default provider-neutral resource ceilings applied to every run. */
   resourceLimits?: ResourceLimits
+  /**
+   * Optional redactor used when a span specifies capture='full+redact'.
+   * Callers wire this in; the SDK has no built-in redaction implementation.
+   */
+  redactor?: Redactor
 }
 
 /**
@@ -93,6 +98,29 @@ export interface ResolvedOptions {
   resourceLimits: ResourceLimits
 }
 
+export type SpanRole = 'user' | 'assistant' | 'system' | 'tool' | 'llm' | 'retrieval'
+
+export type CaptureMode = 'hash' | 'full' | 'full+redact' | 'sampled'
+
+export interface RetrievalHit {
+  docId: string
+  chunkId: string
+  score: number
+  scoreBreakdown?: Record<string, number>
+  cited?: boolean
+  snippet?: string
+}
+
+export type StepContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'messages'; messages: Array<{ role: string; text: string }> }
+  | { kind: 'tool_call'; args: unknown; result?: unknown }
+  | { kind: 'retrieval'; query: string; results: RetrievalHit[] }
+
+export interface Redactor {
+  redactContent(content: StepContent): StepContent
+}
+
 /**
  * Record of a single guarded step execution.
  */
@@ -109,6 +137,11 @@ export interface StepRecord {
   tokensOut: number
   latencyMs: number
   error?: string
+  role?: SpanRole
+  parentStepId?: string
+  capture?: CaptureMode
+  content?: StepContent
+  attrs?: Record<string, unknown>
 }
 
 /**

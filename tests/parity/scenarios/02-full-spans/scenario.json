@@ -1,0 +1,51 @@
+{
+  "name": "02-full-spans",
+  "description": "Exercises run/span/traced across user, retrieval, llm, assistant roles with full capture",
+  "spans": [
+    {
+      "kind": "span",
+      "role": "user",
+      "capture": "full",
+      "content": { "kind": "text", "text": "What is the height limit in Ballymun?" }
+    },
+    {
+      "kind": "traced",
+      "role": "retrieval",
+      "tool_name": "hybrid_search",
+      "capture": "hash",
+      "args": ["Ballymun height limit"]
+    },
+    {
+      "kind": "span",
+      "role": "retrieval",
+      "capture": "full",
+      "content": {
+        "kind": "retrieval",
+        "query": "Ballymun height limit",
+        "results": [
+          { "doc_id": "plan-dcc-2022", "chunk_id": "c412", "score": 0.81, "cited": true },
+          { "doc_id": "plan-dcc-2022", "chunk_id": "c413", "score": 0.76, "cited": false }
+        ]
+      }
+    },
+    {
+      "kind": "span",
+      "role": "llm",
+      "capture": "full",
+      "content": {
+        "kind": "messages",
+        "messages": [
+          { "role": "system", "text": "You are a planning assistant." },
+          { "role": "user", "text": "What is the height limit in Ballymun?" }
+        ]
+      },
+      "attrs": { "model": "claude-sonnet-4-6", "jurisdiction": "dcc" }
+    },
+    {
+      "kind": "span",
+      "role": "assistant",
+      "capture": "full",
+      "content": { "kind": "text", "text": "Per the Dublin City Development Plan 2022, the maximum height in Ballymun is..." }
+    }
+  ]
+}

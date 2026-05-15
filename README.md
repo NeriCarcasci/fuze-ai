@@ -87,6 +87,55 @@ def send_invoice(customer_id: str, amount: float):
     return stripe.create_invoice(customer_id, amount)
 ```
 
+## Full-interaction spans
+
+`guard()` records tamper-evident step records. For a complete conversation trail — user input, retrieval, LLM messages, tool args, assistant output — use the higher-level span API. Same hash chain, semantic role per span, optional inline content capture.
+
+### TypeScript
+
+```typescript
+import { run, span, traced, configure } from 'fuze-ai'
+
+configure({ redactor })   // required only when capture === 'full+redact'
+
+await run({ sessionId, userId, tenant }, async () => {
+  await span({ role: 'user', capture: 'full', content: { kind: 'text', text: userInput } })
+
+  const hits = await traced(searchKnowledge, { role: 'retrieval', capture: 'full' })(query)
+
+  const reply = await traced(callLLM, { role: 'llm', capture: 'full+redact' })(messages)
+
+  await span({ role: 'assistant', capture: 'full', content: { kind: 'text', text: reply } })
+})
+```
+
+### Python
+
+```python
+from fuze_ai import run, span, traced, configure
+
+configure({"redactor": redactor})   # required only when capture == 'full+redact'
+
+async with run(session_id=..., user_id=..., tenant=...):
+    await span(role='user', capture='full',
+               content={'kind': 'text', 'text': user_input})
+
+    hits = traced(search_knowledge, role='retrieval', capture='full')(query)
+
+    reply = traced(call_llm, role='llm', capture='full+redact')(messages)
+
+    await span(role='assistant', capture='full',
+               content={'kind': 'text', 'text': reply})
+```
+
+**Roles** — `user | assistant | system | tool | llm | retrieval`. Parent linkage is automatic.
+
+**Capture modes** — `hash` (default, tamper-evident only), `full` (inline raw content), `full+redact` (inline post-redaction, fail-closed if no redactor configured), `sampled` (reserved). Each span's mode is a deliberate developer decision; nothing auto-upgrades.
+
+**Wire schema** — [`data/trace-schema.json`](data/trace-schema.json). Rationale in [`.context/proposal-full-spans.md`](.context/proposal-full-spans.md).
+
+In the dashboard this renders as a per-run timeline (user → retrieval → llm → assistant) and feeds five optimization views (stuck tool calls, long runs, slow steps, retrieval quality, token hotspots).
+
 ## Why Fuze
 
 Every major agent framework (LangGraph, CrewAI, Google ADK, Microsoft Agent Framework) saves state but **leaves failure detection, automatic recovery, and duplicate prevention entirely to you** ([source](https://www.diagrid.io/blog/still-not-durable-how-microsoft-agent-framework-and-strands-agents-repeat-the-same-mistake)).

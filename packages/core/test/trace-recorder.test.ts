@@ -323,6 +323,53 @@ describe('TraceRecorder', () => {
     }
   })
 
+  it('verifyChain succeeds with mixed pre-v2 and v2 records', async () => {
+    const runId = randomUUID()
+    recorder.startRun(runId, 'mixed-agent', {})
+
+    recorder.recordStep({
+      stepId: randomUUID(),
+      runId,
+      stepNumber: 1,
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      toolName: 'legacy-tool',
+      argsHash: 'legacy',
+      hasSideEffect: false,
+      tokensIn: 10,
+      tokensOut: 5,
+      latencyMs: 10,
+    })
+
+    recorder.recordStep({
+      stepId: randomUUID(),
+      runId,
+      stepNumber: 2,
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      toolName: 'v2-tool',
+      argsHash: 'v2hash',
+      hasSideEffect: false,
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: 5,
+      role: 'user',
+      capture: 'full',
+      content: { kind: 'text', text: 'hello' },
+      attrs: { lang: 'en' },
+    })
+
+    recorder.endRun(runId, 'completed')
+    await recorder.flush()
+
+    const entries = readFileSync(TEST_TRACE_FILE, 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as TraceEntry)
+
+    expect(verifyChain(entries)).toEqual({ valid: true, hmacValid: true })
+  })
+
   it('reuses the same key across TraceRecorder instances', () => {
     const fakeHome = mkdtempSync(join(tmpdir(), 'fuze-home-'))
     const keyPath = join(fakeHome, '.fuze', 'audit.key')

@@ -222,6 +222,47 @@ def test_key_file_creation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         assert (key_path.stat().st_mode & 0o777) == 0o600
 
 
+def test_verify_chain_mixed_pre_v2_and_v2_records(tmp_trace_file):
+    recorder = TraceRecorder(tmp_trace_file)
+    run_id = str(uuid.uuid4())
+
+    recorder.start_run(run_id, "mixed-agent", {})
+    recorder.record_step(_make_step(run_id, 1))
+
+    v2_step: StepRecord = StepRecord(
+        step_id=str(uuid.uuid4()),
+        run_id=run_id,
+        step_number=2,
+        started_at="2026-01-01T00:00:00.200Z",
+        ended_at="2026-01-01T00:00:00.300Z",
+        tool_name="llm-call",
+        args_hash="def456",
+        has_side_effect=False,
+        tokens_in=10,
+        tokens_out=5,
+        latency_ms=100,
+        error=None,
+        role="llm",
+        capture="full",
+        content={"kind": "text", "text": "hello"},
+        parent_step_id=str(uuid.uuid4()),
+        attrs={"model": "claude-x"},
+    )
+    recorder.record_step(v2_step)
+    recorder.record_step(_make_step(run_id, 3))
+    recorder.end_run(run_id, "completed")
+    recorder.flush()
+
+    entries = [json.loads(line) for line in Path(tmp_trace_file).read_text(encoding="utf-8").strip().split("\n")]
+    result = verify_chain(entries)
+    assert result == {"valid": True, "hmac_valid": True}
+
+    step_entries = [e for e in entries if e.get("record_type") == "step"]
+    assert step_entries[1]["role"] == "llm"
+    assert step_entries[1]["content"] == {"kind": "text", "text": "hello"}
+    assert step_entries[1]["attrs"] == {"model": "claude-x"}
+
+
 def test_key_file_reuse(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     key_path = tmp_path / ".fuze" / "audit.key"
     monkeypatch.setattr("fuze_ai.trace_recorder._audit_key_path", lambda: key_path)

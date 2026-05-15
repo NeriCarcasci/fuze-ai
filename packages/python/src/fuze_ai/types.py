@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Literal, Optional, TypedDict
+from typing import Any, Callable, Literal, Optional, Protocol, TypedDict, Union
+
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired  # type: ignore[assignment]
 
 
 class ResourceLimits(TypedDict, total=False):
@@ -56,6 +61,7 @@ class FuzeConfig(TypedDict, total=False):
     agent_id: str
     usage_extractor: Callable[..., Any]
     resource_limits: ResourceLimits
+    redactor: Optional[Redactor]
 
 
 class ResolvedOptions(TypedDict):
@@ -71,6 +77,53 @@ class ResolvedOptions(TypedDict):
     resource_limits: ResourceLimits
 
 
+SpanRole = Literal["user", "assistant", "system", "tool", "llm", "retrieval"]
+CaptureMode = Literal["hash", "full", "full+redact", "sampled"]
+
+
+class RetrievalHit(TypedDict, total=False):
+    doc_id: str
+    chunk_id: str
+    score: float
+    score_breakdown: dict[str, float]
+    cited: bool
+    snippet: str
+
+
+class _TextContent(TypedDict):
+    kind: Literal["text"]
+    text: str
+
+
+class _MessagesContentItem(TypedDict):
+    role: str
+    text: str
+
+
+class _MessagesContent(TypedDict):
+    kind: Literal["messages"]
+    messages: list[_MessagesContentItem]
+
+
+class _ToolCallContent(TypedDict, total=False):
+    kind: Literal["tool_call"]
+    args: Any
+    result: Any
+
+
+class _RetrievalContent(TypedDict):
+    kind: Literal["retrieval"]
+    query: str
+    results: list[RetrievalHit]
+
+
+StepContent = Union[_TextContent, _MessagesContent, _ToolCallContent, _RetrievalContent]
+
+
+class Redactor(Protocol):
+    def redact_content(self, content: StepContent) -> StepContent: ...
+
+
 class StepRecord(TypedDict):
     step_id: str
     run_id: str
@@ -84,6 +137,11 @@ class StepRecord(TypedDict):
     tokens_out: int
     latency_ms: int
     error: Optional[str]
+    role: NotRequired[SpanRole]
+    parent_step_id: NotRequired[str]
+    capture: NotRequired[CaptureMode]
+    content: NotRequired[StepContent]
+    attrs: NotRequired[dict[str, Any]]
 
 
 class GuardEventRecord(TypedDict):

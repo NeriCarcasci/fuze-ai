@@ -15,6 +15,8 @@ import {
   applyConfigure,
   applyResetConfig,
 } from './service-singleton.js'
+import { runWithContext } from './run-context.js'
+import type { ActiveRunContext } from './run-context.js'
 
 function fireAndForget(promise: Promise<unknown>): void {
   promise.catch(() => undefined)
@@ -38,7 +40,23 @@ function buildRunTelemetryConfig(resolved: ReturnType<typeof ConfigLoader.merge>
   }
 }
 
-export type { GuardOptions, FuzeConfig, RunContext, ResourceLimits, ResourceUsageStatus, UsageStatus } from './types.js'
+export type {
+  GuardOptions,
+  FuzeConfig,
+  RunContext,
+  ResourceLimits,
+  ResourceUsageStatus,
+  UsageStatus,
+  StepContent,
+  RetrievalHit,
+  Redactor,
+  SpanRole,
+  CaptureMode,
+  StepRecord,
+} from './types.js'
+export { span, traced } from './span.js'
+export type { SpanOptions, TracedOptions } from './span.js'
+export { getCurrentRunContext } from './run-context.js'
 export { LoopDetected, GuardTimeout, FuzeError, ResourceLimitExceeded } from './errors.js'
 export { ResourceLimitTracker } from './resource-limit-tracker.js'
 export { extractUsageFromResult } from './usage-extractor.js'
@@ -122,6 +140,57 @@ export function createRun(agentId = 'default', options?: GuardOptions): RunConte
       await context.traceRecorder.flush()
       await service.sendRunEnd(runId, status)
     },
+  }
+}
+
+export async function run<T>(
+  opts: { sessionId?: string; userId?: string; tenant?: string; agentId?: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const config = ensureConfig()
+  const resolved = ConfigLoader.merge(config)
+  const runId = randomUUID()
+  const agentId = opts.agentId ?? 'default'
+  const service = getOrCreateService(config)
+
+  const guardContext: GuardContext = {
+    runId,
+    usageTracker: new UsageTracker(),
+    resourceLimitTracker: new ResourceLimitTracker(resolved.resourceLimits),
+    loopDetector: new LoopDetector({
+      ...resolved.loopDetection,
+      maxIterations: resolved.maxIterations,
+    }),
+    sideEffectRegistry: new SideEffectRegistry(),
+    traceRecorder: new TraceRecorder(resolved.traceOutput),
+    stepNumber: 0,
+    service,
+  }
+
+  guardContext.traceRecorder.startRun(runId, agentId, resolved)
+  fireAndForget(service.sendRunStart(runId, agentId, buildRunTelemetryConfig(resolved)))
+
+  const activeCtx: ActiveRunContext = {
+    runId,
+    sessionId: opts.sessionId,
+    userId: opts.userId,
+    tenant: opts.tenant,
+    traceRecorder: guardContext.traceRecorder,
+    service,
+    config,
+    guardContext,
+  }
+
+  let status = 'completed'
+  try {
+    return await runWithContext(activeCtx, fn)
+  } catch (err) {
+    status = 'error'
+    throw err
+  } finally {
+    guardContext.traceRecorder.endRun(runId, status)
+    await guardContext.traceRecorder.flush()
+    await service.sendRunEnd(runId, status)
   }
 }
 

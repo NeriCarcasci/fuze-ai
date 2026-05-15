@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Optional, TypeVar
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Callable, Optional, TypeVar
 
 from fuze_ai.config_loader import ConfigLoader
 from fuze_ai.errors import (
@@ -14,14 +16,19 @@ from fuze_ai.guard import GuardContext, _build_context, _make_wrapper
 from fuze_ai.guarded import guarded
 from fuze_ai.pricing import extract_usage_from_result
 from fuze_ai.resource_limit_tracker import ResourceLimitTracker
+from fuze_ai.run_context import ActiveRunContext, get_current_run_context, run_with_context
 from fuze_ai.services import create_service
 from fuze_ai.services.types import FuzeService, ToolRegistration
-from fuze_ai.trace_recorder import verify_chain
+from fuze_ai.span import span, traced
+from fuze_ai.trace_recorder import TraceRecorder, verify_chain
 from fuze_ai.types import (
     FuzeConfig,
     GuardOptions,
+    Redactor,
     ResourceLimits,
     ResourceUsageStatus,
+    RetrievalHit,
+    StepContent,
 )
 
 __all__ = [
@@ -31,8 +38,14 @@ __all__ = [
     "create_run",
     "register_tools",
     "reset_config",
+    "run",
+    "span",
+    "traced",
     "GuardOptions",
     "FuzeConfig",
+    "Redactor",
+    "RetrievalHit",
+    "StepContent",
     "ResourceLimits",
     "ResourceUsageStatus",
     "ResourceLimitTracker",
@@ -219,3 +232,43 @@ def register_tools(project_id: str, tools: list[ToolRegistration]) -> None:
     config = _get_global_config()
     service = _get_or_create_service(config)
     _run_async_safely(service.register_tools(project_id, tools))
+
+
+@asynccontextmanager
+async def run(
+    *,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    tenant: Optional[str] = None,
+    agent_id: str = "default",
+) -> AsyncIterator[ActiveRunContext]:
+    global_config = _get_global_config()
+    resolved = ConfigLoader.merge(global_config, {})
+    service = _get_or_create_service(resolved)
+    run_id = str(uuid.uuid4())
+    recorder = TraceRecorder(resolved["trace_output"])
+
+    recorder.start_run(run_id, agent_id, dict(resolved))
+    _run_async_safely(service.send_run_start(run_id, agent_id, _run_telemetry_config(resolved)))
+
+    ctx = ActiveRunContext(
+        run_id=run_id,
+        trace_recorder=recorder,
+        service=service,
+        config=global_config,
+        session_id=session_id,
+        user_id=user_id,
+        tenant=tenant,
+    )
+
+    status = "completed"
+    try:
+        with run_with_context(ctx):
+            yield ctx
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        recorder.end_run(run_id, status)
+        recorder.flush()
+        _run_async_safely(service.send_run_end(run_id, status))

@@ -8,7 +8,7 @@ const CAMEL_TO_SNAKE_KEYS = new Set([
   'recordType', 'runId', 'agentId', 'stepId', 'eventId', 'stepNumber',
   'startedAt', 'endedAt', 'toolName', 'argsHash', 'hasSideEffect',
   'tokensIn', 'tokensOut', 'latencyMs', 'prevHash', 'eventType',
-  'sideEffect',
+  'sideEffect', 'parentStepId',
 ])
 
 function camelToSnake(key) {

@@ -52,7 +52,9 @@ Option 2 is rarely the right call. Default to option 1.
 
 ## Wire format reference
 
-The authoritative trace event schema lives at `data/trace-schema.json` (planned). Until that file exists, the JS `TraceRecorder` in `packages/core/src/trace-recorder.ts` is the de-facto source of truth — Python mirrors it exactly. Any drift discovered during review is a JS bug or a Python bug, never "by design."
+The authoritative trace event schema lives at [`data/trace-schema.json`](../data/trace-schema.json). Both SDKs validate against it (after parity normalization). Any drift discovered during review is a JS bug or a Python bug, never "by design."
+
+See [`.context/proposal-full-spans.md`](proposal-full-spans.md) for the v2 schema rationale (role, parentStepId, capture, content, attrs).
 
 ## Why this matters
 

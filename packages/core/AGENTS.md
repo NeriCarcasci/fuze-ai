@@ -23,13 +23,19 @@ Current public surface (must mirror `packages/python/src/fuze_ai/__init__.py`):
 - `guardMethod` — TC39 stage-3 method decorator (bare or factory form `@guardMethod({...})`)
 - `guarded` — class decorator that wraps every async/sync own-method (bare or factory form `@guarded({...})`); has a Python counterpart
 - `guardAll(obj, perMethodOpts?)` — Proxy-based runtime wrapping; **JS only by design** (no Python equivalent — see `.context/parity.md`)
-- `createRun(agentId?, options?)` — returns run context
+- `createRun(agentId?, options?)` — returns run context (legacy; new code prefers `run()`)
+- `run(opts, fn)` — implicit-scope run using `AsyncLocalStorage`; pairs with `span()`/`traced()`
+- `span(opts)` — record a leaf span at current scope; roles: `user | assistant | system | tool | llm | retrieval`
+- `traced(fn, opts)` — wrap a function as a span; nested calls inherit `parentStepId`
+- `getCurrentRunContext()` — access the active run context (adapter authors only)
 - `configure(config)` / `resetConfig()`
 - `registerTools(tools)`
 - `extractUsageFromResult(...)`
 - `verifyChain(...)`
 - Errors: `LoopDetected`, `GuardTimeout`, `ResourceLimitExceeded`, `FuzeError`
-- Types: `GuardOptions`, `FuzeConfig`, `RunContext`, `ResourceLimits`, `ResourceUsageStatus`, `ExtractedUsage`
+- Types: `GuardOptions`, `FuzeConfig`, `RunContext`, `ResourceLimits`, `ResourceUsageStatus`, `ExtractedUsage`, `SpanOptions`, `TracedOptions`, `StepContent`, `RetrievalHit`, `Redactor`
+
+Span API records to the same hash chain as `guard()`. Capture modes: `hash` (default), `full`, `full+redact` (fail-closed if no `redactor` on `FuzeConfig`), `sampled`. Wire schema: [`../../data/trace-schema.json`](../../data/trace-schema.json). Rationale: [`../../.context/proposal-full-spans.md`](../../.context/proposal-full-spans.md).
 
 Decorator runtime: TC39 stage-3 (TS 5+, default semantics — no `experimentalDecorators`). Async-local context propagation via `node:async_hooks`. Internal `this.method()` calls inside a `@guarded` instance record as steps in the same run; external calls open fresh runs. `guardAll` Proxy binds `this` to the original receiver so internal calls do NOT recurse through the Proxy (deliberate divergence from `@guarded` — see decorator tests).
 

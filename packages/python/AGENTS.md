@@ -22,13 +22,18 @@ Current public surface (must mirror `packages/core/src/index.ts`):
 
 - `guard` — decorator (`@guard` or `@guard(timeout=...)`); also accepts a callable for HOF use
 - `guarded` — class decorator that walks own methods and wraps each (`@guarded` or `@guarded(timeout=...)`); has a JS counterpart
-- `create_run(config?)` — returns `RunContext`
+- `create_run(config?)` — returns `RunContext` (legacy; new code prefers `run()`)
+- `run(...)` — async context manager (`async with run(session_id=..., ...):`) using `contextvars`; pairs with `span()`/`traced()`
+- `span(role=..., capture=..., content=..., ...)` — record a leaf span at current scope; roles: `user | assistant | system | tool | llm | retrieval`
+- `traced(fn, role=..., capture=..., ...)` — wrap a function as a span; nested calls inherit `parent_step_id`; handles both sync and async wrapped fns
 - `configure(config)` / `reset_config()`
 - `register_tools(project_id, tools)`
 - `extract_usage_from_result(...)`
 - `verify_chain(...)`
 - Errors: `LoopDetected`, `GuardTimeout`, `ResourceLimitExceeded`, `FuzeError`
-- Types: `GuardOptions`, `FuzeConfig`, `ResourceLimits`, `ResourceUsageStatus`
+- Types: `GuardOptions`, `FuzeConfig`, `ResourceLimits`, `ResourceUsageStatus`, `StepContent`, `RetrievalHit`, `Redactor`
+
+Span API records to the same hash chain as `guard()`. Capture modes: `hash` (default), `full`, `full+redact` (fail-closed if no `redactor` on `FuzeConfig`), `sampled`. Wire schema: [`../../data/trace-schema.json`](../../data/trace-schema.json). Rationale: [`../../.context/proposal-full-spans.md`](../../.context/proposal-full-spans.md). `run_sync()` is not exposed — wrap calls with `asyncio.run(...)` for sync entry points.
 
 `@guarded` propagates the active run via `contextvars.ContextVar`. Internal `self.method()` calls inside a `@guarded` instance record as steps in the same run; external calls open fresh runs. There is no Python counterpart to JS's `guardAll` Proxy — Python's `__getattribute__` magic is uglier than it's worth, and `@guarded` covers the same use case idiomatically. See `.context/parity.md`.
 

@@ -25,6 +25,32 @@ def send_invoice(customer_id: str, amount: float) -> str:
     return stripe.create_invoice(customer_id, amount)
 ```
 
+## Full-interaction spans
+
+For a complete conversation trail (user input → retrieval → LLM → assistant), use
+`run()` + `span()` + `traced()`. Same hash chain as `guard()`, plus semantic roles
+and optional inline content capture.
+
+```python
+from fuze_ai import run, span, traced, configure
+
+configure({"redactor": redactor})   # required only for capture='full+redact'
+
+async with run(session_id=..., user_id=..., tenant=...):
+    await span(role='user', capture='full',
+               content={'kind': 'text', 'text': user_input})
+
+    hits = traced(search_knowledge, role='retrieval', capture='full')(query)
+
+    reply = traced(call_llm, role='llm', capture='full+redact')(messages)
+
+    await span(role='assistant', capture='full',
+               content={'kind': 'text', 'text': reply})
+```
+
+Capture modes: `hash` (default, tamper-evident only), `full` (inline content),
+`full+redact` (inline post-redaction, fail-closed without a redactor), `sampled`.
+
 ## Resource Limits
 
 Limits are expressed in tokens, steps, and wall-clock time. USD cost is an optional estimate

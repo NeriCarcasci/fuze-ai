@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fuze-ai.tech/schema/trace.v2.json",
+  "title": "Fuze trace event schema",
+  "description": "Authoritative wire schema for Fuze trace JSONL. Both JS and Python SDKs emit records whose normalized form validates against this schema. Per .context/parity.md, snake_case is canonical (matches fuze.toml and Python). JS recorder currently emits camelCase and is renamed back to snake_case by the parity harness (tests/parity/normalize.mjs) during comparison. The schema below uses camelCase to match the JS in-process types — apply standard camel→snake mapping for the on-disk Python form (stepId↔step_id, parentStepId↔parent_step_id, etc.).",
+  "version": "2.0.0",
+  "definitions": {
+    "iso8601": { "type": "string", "format": "date-time" },
+    "uuid": { "type": "string", "minLength": 1 },
+    "role": {
+      "type": "string",
+      "enum": ["user", "assistant", "system", "tool", "llm", "retrieval"],
+      "description": "Semantic role of this span. Drives dashboard rendering. 'tool' is the default for legacy guard() emissions (back-compat)."
+    },
+    "capture": {
+      "type": "string",
+      "enum": ["hash", "full", "full+redact", "sampled"],
+      "description": "How span content is captured. 'hash' (default) records argsHash only — tamper-evident, no content. 'full' inlines raw args/result. 'full+redact' runs content through the redaction engine before recording. 'sampled' is reserved for future sampling policies."
+    },
+    "retrievalHit": {
+      "type": "object",
+      "required": ["docId", "chunkId", "score"],
+      "properties": {
+        "docId": { "type": "string" },
+        "chunkId": { "type": "string" },
+        "score": { "type": "number" },
+        "scoreBreakdown": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        },
+        "cited": { "type": "boolean" },
+        "snippet": { "type": "string" }
+      }
+    },
+    "stepContent": {
+      "description": "Captured content for a span. Discriminated by 'kind'. Present only when capture !== 'hash'.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "text" },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "messages"],
+          "properties": {
+            "kind": { "const": "messages" },
+            "messages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["role", "text"],
+                "properties": {
+                  "role": { "type": "string" },
+                  "text": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "args"],
+          "properties": {
+            "kind": { "const": "tool_call" },
+            "args": {},
+            "result": {}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "query", "results"],
+          "properties": {
+            "kind": { "const": "retrieval" },
+            "query": { "type": "string" },
+            "results": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/retrievalHit" }
+            }
+          }
+        }
+      ]
+    },
+    "stepRecord": {
+      "type": "object",
+      "required": [
+        "stepId",
+        "runId",
+        "stepNumber",
+        "startedAt",
+        "endedAt",
+        "toolName",
+        "argsHash",
+        "hasSideEffect",
+        "tokensIn",
+        "tokensOut",
+        "latencyMs",
+        "role",
+        "capture"
+      ],
+      "properties": {
+        "stepId":        { "$ref": "#/definitions/uuid" },
+        "runId":         { "$ref": "#/definitions/uuid" },
+        "stepNumber":    { "type": "integer", "minimum": 0 },
+        "startedAt":     { "$ref": "#/definitions/iso8601" },
+        "endedAt":       { "$ref": "#/definitions/iso8601" },
+        "toolName":      { "type": "string" },
+        "argsHash":      { "type": "string" },
+        "hasSideEffect": { "type": "boolean" },
+        "tokensIn":      { "type": "integer", "minimum": 0 },
+        "tokensOut":     { "type": "integer", "minimum": 0 },
+        "latencyMs":     { "type": "integer", "minimum": 0 },
+        "error":         { "type": "string" },
+
+        "role":          { "$ref": "#/definitions/role" },
+        "parentStepId":  { "$ref": "#/definitions/uuid" },
+        "capture":       { "$ref": "#/definitions/capture" },
+        "content":       { "$ref": "#/definitions/stepContent" },
+        "attrs": {
+          "type": "object",
+          "description": "Open bag for span-type-specific fields. Avoid load-bearing keys here; promote them to typed fields when patterns stabilize."
+        }
+      }
+    },
+    "runStartRecord": {
+      "type": "object",
+      "required": ["recordType", "runId", "agentId", "config", "timestamp"],
+      "properties": {
+        "recordType": { "const": "run_start" },
+        "runId":      { "$ref": "#/definitions/uuid" },
+        "agentId":    { "type": "string" },
+        "config":     { "type": "object" },
+        "timestamp":  { "$ref": "#/definitions/iso8601" },
+        "sessionId":  { "type": "string", "description": "Optional caller-supplied session ID for grouping runs into a conversation." },
+        "tenant":     { "type": "string" },
+        "userId":     { "type": "string" }
+      }
+    },
+    "runEndRecord": {
+      "type": "object",
+      "required": ["recordType", "runId", "status", "timestamp"],
+      "properties": {
+        "recordType": { "const": "run_end" },
+        "runId":      { "$ref": "#/definitions/uuid" },
+        "status":     { "type": "string" },
+        "timestamp":  { "$ref": "#/definitions/iso8601" }
+      }
+    },
+    "guardEventRecord": {
+      "type": "object",
+      "required": ["recordType", "event"],
+      "properties": {
+        "recordType": { "const": "guard_event" },
+        "event": {
+          "type": "object",
+          "required": ["eventId", "runId", "timestamp", "type", "severity", "details"],
+          "properties": {
+            "eventId":   { "$ref": "#/definitions/uuid" },
+            "runId":     { "$ref": "#/definitions/uuid" },
+            "stepId":    { "$ref": "#/definitions/uuid" },
+            "timestamp": { "$ref": "#/definitions/iso8601" },
+            "type":      { "type": "string", "enum": ["loop_detected", "timeout", "kill", "side_effect_blocked", "retry"] },
+            "severity":  { "type": "string", "enum": ["warning", "action", "critical"] },
+            "details":   { "type": "object" }
+          }
+        }
+      }
+    },
+    "chainFields": {
+      "type": "object",
+      "required": ["hash", "prevHash", "signature", "sequence"],
+      "properties": {
+        "hash":      { "type": "string", "minLength": 64, "maxLength": 64 },
+        "prevHash":  { "type": "string", "minLength": 64, "maxLength": 64 },
+        "signature": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "sequence":  { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "allOf": [
+        { "$ref": "#/definitions/runStartRecord" },
+        { "$ref": "#/definitions/chainFields" }
+      ]
+    },
+    {
+      "type": "object",
+      "required": ["recordType"],
+      "properties": {
+        "recordType": { "const": "step" }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/stepRecord" },
+        { "$ref": "#/definitions/chainFields" }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/definitions/guardEventRecord" },
+        { "$ref": "#/definitions/chainFields" }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/definitions/runEndRecord" },
+        { "$ref": "#/definitions/chainFields" }
+      ]
+    }
+  ],
+  "x-parity-notes": {
+    "casing": "snake_case is canonical (see .context/parity.md). JS recorder emits camelCase as a pre-existing divergence; the parity harness at tests/parity/normalize.mjs renames JS keys to snake_case before comparing JSONL output. New fields in this proposal follow the same rule: JS emits camelCase (parentStepId), Python emits snake_case (parent_step_id), harness normalizes. Resolving the divergence (switching JS to snake_case) is a tracked separate effort and not part of v2.",
+    "backCompat": "All new fields (role, parentStepId, capture, content, attrs) on stepRecord have defaults. Records emitted by pre-v2 SDKs validate against this schema after defaults are applied: role='tool', capture='hash'.",
+    "redactionInvariant": "When capture='full+redact', content MUST be the post-redaction form. Raw content never enters the hash chain. Enforced in SDK, not downstream.",
+    "newFieldsNormalization": "The parity harness must learn the new camel↔snake mappings: parentStepId↔parent_step_id. role, capture, content, attrs are case-identical across languages."
+  }
+}

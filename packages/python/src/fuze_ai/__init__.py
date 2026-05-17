@@ -249,7 +249,14 @@ async def run(
     recorder = TraceRecorder(resolved["trace_output"])
 
     recorder.start_run(run_id, agent_id, dict(resolved))
-    _run_async_safely(service.send_run_start(run_id, agent_id, _run_telemetry_config(resolved)))
+    meta: dict[str, Any] = {}
+    if session_id:
+        meta["session_id"] = session_id
+    if user_id:
+        meta["user_id"] = user_id
+    if tenant:
+        meta["tenant"] = tenant
+    _run_async_safely(service.send_run_start(run_id, agent_id, _run_telemetry_config(resolved), meta or None))
 
     ctx = ActiveRunContext(
         run_id=run_id,

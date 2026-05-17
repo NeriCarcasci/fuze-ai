@@ -1,4 +1,13 @@
 /**
+ * Optional v2 metadata sent alongside a run_start event.
+ */
+export interface RunStartMeta {
+  sessionId?: string
+  userId?: string
+  tenant?: string
+}
+
+/**
  * Data for a pre-execution step check sent to the service.
  */
 export interface StepCheckData {
@@ -21,6 +30,13 @@ export interface StepEndData {
   tokensOut: number
   latencyMs: number
   error?: string | null
+  startedAt?: string
+  endedAt?: string
+  role?: 'user' | 'assistant' | 'system' | 'tool' | 'llm' | 'retrieval'
+  parentStepId?: string
+  capture?: 'hash' | 'full' | 'full+redact' | 'sampled'
+  content?: unknown
+  attrs?: Record<string, unknown>
 }
 
 /**
@@ -72,7 +88,7 @@ export interface FuzeService {
   refreshConfig(): Promise<void>
 
   // ── Telemetry ──────────────────────────────────────────────────────────────
-  sendRunStart(runId: string, agentId: string, config: object): Promise<void>
+  sendRunStart(runId: string, agentId: string, config: object, meta?: RunStartMeta): Promise<void>
   /**
    * Check whether the step should proceed, be killed, or be paused.
    * Must return within its own internal timeout — never blocks the agent indefinitely.

@@ -168,7 +168,11 @@ export async function run<T>(
   }
 
   guardContext.traceRecorder.startRun(runId, agentId, resolved)
-  fireAndForget(service.sendRunStart(runId, agentId, buildRunTelemetryConfig(resolved)))
+  fireAndForget(service.sendRunStart(runId, agentId, buildRunTelemetryConfig(resolved), {
+    ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+    ...(opts.userId !== undefined ? { userId: opts.userId } : {}),
+    ...(opts.tenant !== undefined ? { tenant: opts.tenant } : {}),
+  }))
 
   const activeCtx: ActiveRunContext = {
     runId,

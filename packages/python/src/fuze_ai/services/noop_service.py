@@ -27,7 +27,7 @@ class NoopService(FuzeService):
     async def refresh_config(self, force: bool = False) -> None:
         return None
 
-    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any]) -> None:
+    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any], meta: dict[str, Any] | None = None) -> None:
         return None
 
     async def send_step_start(self, run_id: str, step: StepCheckData) -> Literal["proceed", "kill", "pause"]:

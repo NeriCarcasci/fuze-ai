@@ -130,8 +130,16 @@ class ApiService:
         self._config_cache = tools  # type: ignore[assignment]
         self._config_refreshed_at = time.time() * 1000
 
-    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any]) -> None:
-        self._enqueue({"type": "run_start", "run_id": run_id, "agent_id": agent_id, "config": config})
+    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any], meta: dict[str, Any] | None = None) -> None:
+        event: dict[str, Any] = {"type": "run_start", "run_id": run_id, "agent_id": agent_id, "config": config}
+        if meta:
+            if meta.get("session_id"):
+                event["session_id"] = meta["session_id"]
+            if meta.get("user_id"):
+                event["user_id"] = meta["user_id"]
+            if meta.get("tenant"):
+                event["tenant"] = meta["tenant"]
+        self._enqueue(event)
 
     async def send_step_start(self, run_id: str, step: StepCheckData) -> Literal["proceed", "kill", "pause"]:
         if not self._has_api_key():

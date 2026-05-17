@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from fuze_ai.errors import FuzeError
+from fuze_ai.guard import _fire_and_forget
 from fuze_ai.run_context import ActiveRunContext, child_parent_step, get_current_run_context
 from fuze_ai.types import CaptureMode, SpanRole, StepContent, StepRecord
 
@@ -144,6 +145,28 @@ async def span(
     )
     ctx.trace_recorder.record_step(record)
 
+    payload: dict[str, Any] = {
+        "tool_name": resolved_tool,
+        "step_number": ctx.step_number,
+        "args_hash": args_hash,
+        "has_side_effect": False,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 0,
+        "error": None,
+        "started_at": now,
+        "ended_at": now,
+        "role": role,
+        "capture": capture,
+    }
+    if ctx.parent_step_id is not None:
+        payload["parent_step_id"] = ctx.parent_step_id
+    if resolved_content is not None:
+        payload["content"] = resolved_content
+    if attrs is not None:
+        payload["attrs"] = attrs
+    _fire_and_forget(ctx.service.send_step_end(ctx.run_id, step_id, payload))
+
 
 def traced(
     fn: Callable[..., Any],
@@ -197,6 +220,26 @@ def traced(
             step_id=step_id,
         )
         ctx.trace_recorder.record_step(record)
+
+        payload: dict[str, Any] = {
+            "tool_name": resolved_tool,
+            "step_number": ctx.step_number,
+            "args_hash": args_hash,
+            "has_side_effect": False,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "latency_ms": latency_ms,
+            "error": error_msg,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "role": role,
+            "capture": capture,
+        }
+        if ctx.parent_step_id is not None:
+            payload["parent_step_id"] = ctx.parent_step_id
+        if resolved_content is not None:
+            payload["content"] = resolved_content
+        _fire_and_forget(ctx.service.send_step_end(ctx.run_id, step_id, payload))
 
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)

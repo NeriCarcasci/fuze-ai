@@ -167,8 +167,16 @@ export class ApiService implements FuzeService {
     this._configRefreshedAt = Date.now()
   }
 
-  async sendRunStart(runId: string, agentId: string, config: object): Promise<void> {
-    this._enqueue({ type: 'run_start', run_id: runId, agent_id: agentId, config })
+  async sendRunStart(runId: string, agentId: string, config: object, meta?: { sessionId?: string; userId?: string; tenant?: string }): Promise<void> {
+    this._enqueue({
+      type: 'run_start',
+      run_id: runId,
+      agent_id: agentId,
+      config,
+      ...(meta?.sessionId ? { session_id: meta.sessionId } : {}),
+      ...(meta?.userId ? { user_id: meta.userId } : {}),
+      ...(meta?.tenant ? { tenant: meta.tenant } : {}),
+    })
   }
 
   async sendStepStart(runId: string, step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'> {

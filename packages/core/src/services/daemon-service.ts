@@ -105,7 +105,7 @@ export class DaemonService implements FuzeService {
 
   // ── Telemetry ──────────────────────────────────────────────────────────────
 
-  async sendRunStart(runId: string, agentId: string, _config: object): Promise<void> {
+  async sendRunStart(runId: string, agentId: string, _config: object, _meta?: { sessionId?: string; userId?: string; tenant?: string }): Promise<void> {
     this._send({ type: 'run_start', runId, agentId })
   }
 

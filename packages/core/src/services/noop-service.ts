@@ -15,7 +15,7 @@ export class NoopService implements FuzeService {
   getToolConfig(_toolName: string): ToolConfig | null { return null }
   async refreshConfig(): Promise<void> {}
 
-  async sendRunStart(_runId: string, _agentId: string, _config: object): Promise<void> {}
+  async sendRunStart(_runId: string, _agentId: string, _config: object, _meta?: { sessionId?: string; userId?: string; tenant?: string }): Promise<void> {}
   async sendStepStart(_runId: string, _step: StepCheckData): Promise<'proceed' | 'kill' | 'pause'> {
     return 'proceed'
   }

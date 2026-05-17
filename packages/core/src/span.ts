@@ -3,6 +3,10 @@ import type { CaptureMode, SpanRole, StepContent, StepRecord } from './types.js'
 import { FuzeError } from './errors.js'
 import { getCurrentRunContext, runWithContext } from './run-context.js'
 
+function fireAndForget(promise: Promise<unknown>): void {
+  promise.catch(() => undefined)
+}
+
 export interface SpanOptions {
   role: SpanRole
   capture?: CaptureMode
@@ -112,6 +116,24 @@ export async function span(opts: SpanOptions): Promise<void> {
   if (opts.attrs !== undefined) record.attrs = opts.attrs
 
   ctx.traceRecorder.recordStep(record)
+
+  fireAndForget(ctx.guardContext.service.sendStepEnd(ctx.runId, stepId, {
+    toolName,
+    stepNumber,
+    argsHash,
+    hasSideEffect: false,
+    tokensIn: 0,
+    tokensOut: 0,
+    latencyMs: 0,
+    error: null,
+    startedAt: now,
+    endedAt: now,
+    role: opts.role,
+    capture,
+    ...(ctx.parentStepId ? { parentStepId: ctx.parentStepId } : {}),
+    ...(resolvedContent !== undefined ? { content: resolvedContent } : {}),
+    ...(opts.attrs !== undefined ? { attrs: opts.attrs } : {}),
+  }))
 }
 
 export function traced<T extends (...args: any[]) => any>(fn: T, opts: TracedOptions): T {
@@ -174,6 +196,24 @@ export function traced<T extends (...args: any[]) => any>(fn: T, opts: TracedOpt
       if (error !== undefined) record.error = error
 
       ctx.traceRecorder.recordStep(record)
+
+      fireAndForget(ctx.guardContext.service.sendStepEnd(ctx.runId, stepId, {
+        toolName,
+        stepNumber,
+        argsHash,
+        hasSideEffect: false,
+        tokensIn: 0,
+        tokensOut: 0,
+        latencyMs,
+        error: error ?? null,
+        startedAt,
+        endedAt,
+        role,
+        capture,
+        ...(parentStepId ? { parentStepId } : {}),
+        ...(resolvedContent !== undefined ? { content: resolvedContent } : {}),
+        ...(opts.attrs !== undefined ? { attrs: opts.attrs } : {}),
+      }))
     }
 
     const nestedCtx = { ...ctx, parentStepId: stepId }

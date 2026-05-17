@@ -134,9 +134,9 @@ class DaemonService:
 
         self._config_cache = dict(tools)
 
-    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any]) -> None:
+    async def send_run_start(self, run_id: str, agent_id: str, config: dict[str, Any], meta: dict[str, Any] | None = None) -> None:
         if not self._connected:
-            await self._fallback.send_run_start(run_id, agent_id, config)
+            await self._fallback.send_run_start(run_id, agent_id, config, meta)
             return
         await self._send({"type": "run_start", "runId": run_id, "agentId": agent_id, "config": config})
 

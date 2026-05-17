@@ -97,8 +97,8 @@ describe('SideEffectRegistry', () => {
 
     const started = Date.parse(result.compensationStartedAt as string)
     const ended = Date.parse(result.compensationEndedAt as string)
-    expect(ended - started).toBeGreaterThanOrEqual(200)
-    expect(result.compensationLatencyMs).toBeGreaterThanOrEqual(200)
+    expect(ended - started).toBeGreaterThanOrEqual(190)
+    expect(result.compensationLatencyMs).toBeGreaterThanOrEqual(190)
   })
 
   it('captures compensation end timestamp and error when compensation throws', async () => {

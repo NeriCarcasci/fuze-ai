@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fuze-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Runtime safety layer for AI agents — loop detection, budget enforcement, side-effect tracking, and audit logging."
 readme = "README.md"
 license = "MIT"

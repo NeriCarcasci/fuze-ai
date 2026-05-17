@@ -1,6 +1,6 @@
 {
   "name": "fuze-ai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime safety middleware for AI agents — loop detection, budget enforcement, side-effect tracking, and audit logging.",
   "type": "module",
   "main": "./dist/index.js",
